@@ -57251,15 +57251,21 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/ObservabilityProvider"
+                            "$ref": "#/definitions/VerifyApiKeyRequest"
                         }
                     }
                 ],
                 "responses": {
-                    "201": {
+                    "200": {
                         "description": "",
                         "schema": {
-                            "$ref": "#/definitions/ObservabilityProvider"
+                            "$ref": "#/definitions/VerifyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/ApiErrorResponse"
                         }
                     },
                     "default": {
@@ -57271,7 +57277,9 @@
                 },
                 "tags": [
                     "tracer"
-                ]
+                ],
+                "x-runtime-request-validation": true,
+                "x-runtime-response-validation": true
             },
             "parameters": []
         },
@@ -57285,15 +57293,21 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/ObservabilityProvider"
+                            "$ref": "#/definitions/VerifyAssistantIdRequest"
                         }
                     }
                 ],
                 "responses": {
-                    "201": {
+                    "200": {
                         "description": "",
                         "schema": {
-                            "$ref": "#/definitions/ObservabilityProvider"
+                            "$ref": "#/definitions/VerifyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/ApiErrorResponse"
                         }
                     },
                     "default": {
@@ -57305,7 +57319,9 @@
                 },
                 "tags": [
                     "tracer"
-                ]
+                ],
+                "x-runtime-request-validation": true,
+                "x-runtime-response-validation": true
             },
             "parameters": []
         },
@@ -62666,7 +62682,19 @@
                     "200": {
                         "description": "",
                         "schema": {
-                            "$ref": "#/definitions/Trace"
+                            "$ref": "#/definitions/TraceDetailResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/ApiErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "",
+                        "schema": {
+                            "$ref": "#/definitions/ApiErrorResponse"
                         }
                     },
                     "default": {
@@ -63775,6 +63803,13 @@
                         "type": "string",
                         "default": "[]",
                         "minLength": 1
+                    },
+                    {
+                        "name": "export",
+                        "in": "query",
+                        "required": false,
+                        "type": "boolean",
+                        "default": false
                     }
                 ],
                 "responses": {
@@ -63803,6 +63838,10 @@
                         }
                     }
                 },
+                "produces": [
+                    "application/json",
+                    "text/csv"
+                ],
                 "tags": [
                     "tracer"
                 ],
@@ -86060,7 +86099,8 @@
         },
         "AnnotationQueue": {
             "required": [
-                "name"
+                "name",
+                "label_ids"
             ],
             "type": "object",
             "properties": {
@@ -86179,7 +86219,7 @@
                         "type": "string",
                         "format": "uuid"
                     },
-                    "default": []
+                    "minItems": 1
                 },
                 "annotator_ids": {
                     "type": "array",
@@ -93650,8 +93690,9 @@
                     "title": "Run prompt config",
                     "type": "object",
                     "additionalProperties": {
-                        "type": "string",
-                        "x-nullable": true
+                        "type": "object",
+                        "x-json-value": true,
+                        "description": "Any valid JSON value."
                     }
                 },
                 "messages": {
@@ -93660,8 +93701,9 @@
                     "items": {
                         "type": "object",
                         "additionalProperties": {
-                            "type": "string",
-                            "x-nullable": true
+                            "type": "object",
+                            "x-json-value": true,
+                            "description": "Any valid JSON value."
                         }
                     }
                 },
@@ -93707,9 +93749,10 @@
                 },
                 "response_format": {
                     "title": "Response format",
-                    "description": "JSON schema for response format if required. Can be a JSON object or string. Defaults to None.",
+                    "description": "Any valid JSON value.",
                     "type": "object",
-                    "x-nullable": true
+                    "x-nullable": true,
+                    "x-json-value": true
                 },
                 "tool_choice": {
                     "title": "Tool choice",
@@ -93728,8 +93771,9 @@
                     "items": {
                         "type": "object",
                         "additionalProperties": {
-                            "type": "string",
-                            "x-nullable": true
+                            "type": "object",
+                            "x-json-value": true,
+                            "description": "Any valid JSON value."
                         }
                     },
                     "x-nullable": true
@@ -94554,7 +94598,55 @@
                 }
             }
         },
-        "ExperimentRowDiffCell": {
+        "ExperimentRowCellInnerMetadata": {
+            "type": "object",
+            "properties": {
+                "explanation": {
+                    "title": "Explanation",
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "error_analysis": {
+                    "title": "Error analysis",
+                    "type": "object",
+                    "x-nullable": true
+                },
+                "selected_input_key": {
+                    "title": "Selected input key",
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
+        "ExperimentRowCellMetadata": {
+            "type": "object",
+            "properties": {
+                "response_time_ms": {
+                    "title": "Response time ms",
+                    "type": "number",
+                    "x-nullable": true
+                },
+                "token_count": {
+                    "title": "Token count",
+                    "type": "integer",
+                    "x-nullable": true
+                },
+                "cost": {
+                    "title": "Cost",
+                    "type": "object",
+                    "x-nullable": true
+                },
+                "cell_metadata": {
+                    "$ref": "#/definitions/ExperimentRowCellInnerMetadata"
+                },
+                "reason": {
+                    "title": "Reason",
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
+        "ExperimentRowCell": {
             "type": "object",
             "properties": {
                 "cell_value": {
@@ -94569,7 +94661,11 @@
                 },
                 "status": {
                     "title": "Status",
-                    "type": "string"
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "metadata": {
+                    "$ref": "#/definitions/ExperimentRowCellMetadata"
                 },
                 "value_infos": {
                     "title": "Value infos",
@@ -94595,7 +94691,7 @@
                     "additionalProperties": {
                         "type": "object",
                         "additionalProperties": {
-                            "$ref": "#/definitions/ExperimentRowDiffCell"
+                            "$ref": "#/definitions/ExperimentRowCell"
                         }
                     }
                 }
@@ -101291,6 +101387,19 @@
                 }
             }
         },
+        "ExperimentTableRow": {
+            "required": [
+                "row_id"
+            ],
+            "type": "object",
+            "properties": {
+                "row_id": {
+                    "title": "Row id",
+                    "type": "string",
+                    "format": "uuid"
+                }
+            }
+        },
         "ExperimentTableRowsMetadata": {
             "type": "object",
             "properties": {
@@ -101339,7 +101448,7 @@
                 "table": {
                     "type": "array",
                     "items": {
-                        "type": "object"
+                        "$ref": "#/definitions/ExperimentTableRow"
                     }
                 },
                 "metadata": {
@@ -121887,7 +121996,9 @@
                         "eleven_labs",
                         "retell",
                         "livekit",
-                        "others"
+                        "others",
+                        "bland",
+                        "twilio"
                     ]
                 },
                 "enabled": {
@@ -121923,6 +122034,81 @@
                     "type": "string",
                     "format": "date-time",
                     "readOnly": true
+                }
+            }
+        },
+        "VerifyApiKeyRequest": {
+            "required": [
+                "provider"
+            ],
+            "type": "object",
+            "properties": {
+                "provider": {
+                    "title": "Provider",
+                    "type": "string",
+                    "enum": [
+                        "vapi",
+                        "retell"
+                    ]
+                },
+                "api_key": {
+                    "title": "Api key",
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "agent_id": {
+                    "title": "Agent id",
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
+        "VerifyResponse": {
+            "required": [
+                "result"
+            ],
+            "type": "object",
+            "properties": {
+                "status": {
+                    "title": "Status",
+                    "type": "boolean",
+                    "default": true
+                },
+                "result": {
+                    "title": "Result",
+                    "type": "string",
+                    "minLength": 1
+                }
+            }
+        },
+        "VerifyAssistantIdRequest": {
+            "required": [
+                "provider"
+            ],
+            "type": "object",
+            "properties": {
+                "provider": {
+                    "title": "Provider",
+                    "type": "string",
+                    "enum": [
+                        "vapi",
+                        "retell"
+                    ]
+                },
+                "assistant_id": {
+                    "title": "Assistant id",
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "api_key": {
+                    "title": "Api key",
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "agent_id": {
+                    "title": "Agent id",
+                    "type": "string",
+                    "x-nullable": true
                 }
             }
         },
@@ -124825,6 +125011,51 @@
                 "tags": {
                     "title": "Tags",
                     "type": "object"
+                }
+            }
+        },
+        "TraceDetailResult": {
+            "required": [
+                "trace",
+                "observation_spans",
+                "summary",
+                "graph"
+            ],
+            "type": "object",
+            "properties": {
+                "trace": {
+                    "title": "Trace",
+                    "type": "object"
+                },
+                "observation_spans": {
+                    "type": "array",
+                    "items": {
+                        "type": "object"
+                    }
+                },
+                "summary": {
+                    "title": "Summary",
+                    "type": "object"
+                },
+                "graph": {
+                    "title": "Graph",
+                    "type": "object"
+                }
+            }
+        },
+        "TraceDetailResponse": {
+            "required": [
+                "result"
+            ],
+            "type": "object",
+            "properties": {
+                "status": {
+                    "title": "Status",
+                    "type": "boolean",
+                    "default": true
+                },
+                "result": {
+                    "$ref": "#/definitions/TraceDetailResult"
                 }
             }
         },
