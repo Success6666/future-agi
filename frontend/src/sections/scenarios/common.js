@@ -288,23 +288,11 @@ export const createScenarioFileDropHandler =
     }
 
     const files = Array.from(acceptedFiles || []);
-    const maxSize = 5 * 1024 * 1024; // 5MB
 
-    const filesLargerThanMaxSize = files.filter((file) => file?.size > maxSize);
-
-    if (filesLargerThanMaxSize.length > 0) {
-      enqueueSnackbar("File size is too large", {
-        variant: "error",
-      });
-      return;
-    }
-
-    const validFiles = files.filter((file) => file.size <= maxSize);
-
-    const processedFiles = validFiles.map((file) => ({
+    const processedFiles = files.map((file) => ({
       file: file,
-      name: file.name,
-      size: file.size,
+      name: file?.name,
+      size: file?.size,
     }));
 
     if (onChange) {
