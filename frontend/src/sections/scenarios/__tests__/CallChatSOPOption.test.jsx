@@ -22,7 +22,7 @@ vi.mock("src/components/snackbar", () => ({
 
 import React from "react";
 import PropTypes from "prop-types";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, waitFor } from "@testing-library/react";
 import { useForm, FormProvider } from "react-hook-form";
 import CallChatSOPOption from "../CallChatSOPOption";
 
@@ -54,16 +54,24 @@ describe("CallChatSOPOption", () => {
   });
 
   it("renders the upload dropzone", () => {
-    render(React.createElement(TestWrapper, null,
-      React.createElement(CallChatSOPOption, null),
-    ));
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
     expect(screen.getByText("Call/Chat SOP")).toBeTruthy();
   });
 
   it("rejects a 0-byte file and shows an error snackbar", () => {
-    render(React.createElement(TestWrapper, null,
-      React.createElement(CallChatSOPOption, null),
-    ));
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
 
     const emptyFile = createFile("empty.pdf", "", "application/pdf");
     const rejection = {
@@ -83,9 +91,13 @@ describe("CallChatSOPOption", () => {
   });
 
   it("accepts a valid file without showing an error", () => {
-    render(React.createElement(TestWrapper, null,
-      React.createElement(CallChatSOPOption, null),
-    ));
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
 
     const validFile = createFile("script.txt", "print('hello')", "text/plain");
     triggerDrop([validFile], []);
@@ -94,9 +106,13 @@ describe("CallChatSOPOption", () => {
   });
 
   it("accepts a valid PDF file", () => {
-    render(React.createElement(TestWrapper, null,
-      React.createElement(CallChatSOPOption, null),
-    ));
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
 
     const validPdf = createFile("doc.pdf", "%PDF-1.4", "application/pdf");
     triggerDrop([validPdf], []);
@@ -105,9 +121,13 @@ describe("CallChatSOPOption", () => {
   });
 
   it("shows snackbar for each rejected file", () => {
-    render(React.createElement(TestWrapper, null,
-      React.createElement(CallChatSOPOption, null),
-    ));
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
 
     const rejection1 = {
       file: createFile("empty1.pdf", "", "application/pdf"),
@@ -127,10 +147,14 @@ describe("CallChatSOPOption", () => {
     expect(mockEnqueue).toHaveBeenCalledTimes(2);
   });
 
-  it("processes an accepted file alongside a rejected one", () => {
-    render(React.createElement(TestWrapper, null,
-      React.createElement(CallChatSOPOption, null),
-    ));
+  it("processes an accepted file alongside a rejected one", async () => {
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
 
     const validFile = createFile("good.txt", "content", "text/plain");
     const rejection = {
@@ -142,13 +166,27 @@ describe("CallChatSOPOption", () => {
 
     triggerDrop([validFile], [rejection]);
 
+    // Rejection shows an error
     expect(mockEnqueue).toHaveBeenCalledTimes(1);
+    expect(mockEnqueue).toHaveBeenCalledWith(
+      expect.stringContaining("bad.pdf"),
+      { variant: "error" },
+    );
+
+    // Accepted file is still processed — it appears in the UI
+    await waitFor(() => {
+      expect(screen.getByText("good.txt")).toBeTruthy();
+    });
   });
 
   it("does not crash when fileRejections is null", () => {
-    render(React.createElement(TestWrapper, null,
-      React.createElement(CallChatSOPOption, null),
-    ));
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
 
     const validFile = createFile("doc.txt", "text", "text/plain");
 
@@ -157,17 +195,25 @@ describe("CallChatSOPOption", () => {
   });
 
   it("does not crash when acceptedFiles is null", () => {
-    render(React.createElement(TestWrapper, null,
-      React.createElement(CallChatSOPOption, null),
-    ));
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
 
     expect(() => triggerDrop(null, [])).not.toThrow();
   });
 
   it("does not crash on rejection item with no errors array", () => {
-    render(React.createElement(TestWrapper, null,
-      React.createElement(CallChatSOPOption, null),
-    ));
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
 
     const rejection = {
       file: createFile("unknown.pdf", "", "application/pdf"),
@@ -178,9 +224,13 @@ describe("CallChatSOPOption", () => {
   });
 
   it("does not crash on rejection item with null file", () => {
-    render(React.createElement(TestWrapper, null,
-      React.createElement(CallChatSOPOption, null),
-    ));
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
 
     const rejection = {
       errors: [
@@ -189,5 +239,133 @@ describe("CallChatSOPOption", () => {
     };
 
     expect(() => triggerDrop([], [rejection])).not.toThrow();
+    // Shows a generic message instead of being silent
+    expect(mockEnqueue).toHaveBeenCalledWith("File could not be uploaded", {
+      variant: "error",
+    });
+  });
+
+  it("passes minSize and maxSize to useDropzone", async () => {
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
+
+    const { useDropzone } = await import("react-dropzone");
+    expect(useDropzone).toHaveBeenCalledWith(
+      expect.objectContaining({
+        minSize: 1,
+        maxSize: 5 * 1024 * 1024,
+      }),
+    );
+  });
+
+  it("rejects a too-many-files and aggregates into one toast", () => {
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
+
+    const file1 = createFile("a.txt", "content", "text/plain");
+    const file2 = createFile("b.txt", "content", "text/plain");
+
+    const rejection1 = {
+      file: file1,
+      errors: [{ code: "too-many-files", message: "Too many files" }],
+    };
+    const rejection2 = {
+      file: file2,
+      errors: [{ code: "too-many-files", message: "Too many files" }],
+    };
+
+    triggerDrop([], [rejection1, rejection2]);
+
+    // Aggregated into one toast, not two
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
+    expect(mockEnqueue).toHaveBeenCalledWith("Please upload only one file.", {
+      variant: "error",
+    });
+  });
+
+  it("shows friendly message for file-invalid-type", () => {
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
+
+    const rejection = {
+      file: createFile("notes.docx", "", "application/msword"),
+      errors: [
+        {
+          code: "file-invalid-type",
+          message: "File type must be text/plain,.txt,application/pdf,.pdf",
+        },
+      ],
+    };
+
+    triggerDrop([], [rejection]);
+
+    expect(mockEnqueue).toHaveBeenCalledWith(
+      "Unsupported file type. Please upload a TXT or PDF file.",
+      { variant: "error" },
+    );
+  });
+
+  it("shows friendly message for file-too-large", () => {
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
+
+    const rejection = {
+      file: createFile(
+        "big.pdf",
+        "x".repeat(6 * 1024 * 1024),
+        "application/pdf",
+      ),
+      errors: [
+        {
+          code: "file-too-large",
+          message: "File is larger than 5242880 bytes",
+        },
+      ],
+    };
+
+    triggerDrop([], [rejection]);
+
+    expect(mockEnqueue).toHaveBeenCalledWith(
+      "File size is too large. Please upload a file under 5 MB.",
+      { variant: "error" },
+    );
+  });
+
+  it("does not crash when errors is null", () => {
+    render(
+      React.createElement(
+        TestWrapper,
+        null,
+        React.createElement(CallChatSOPOption, null),
+      ),
+    );
+
+    const rejection = {
+      file: createFile("doc.txt", "", "text/plain"),
+      errors: null,
+    };
+
+    expect(() => triggerDrop([], [rejection])).not.toThrow();
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
   });
 });

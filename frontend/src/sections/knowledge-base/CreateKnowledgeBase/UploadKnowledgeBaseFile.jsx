@@ -4,10 +4,12 @@ import React from "react";
 import { RHFUpload } from "src/components/hook-form";
 import Iconify from "src/components/iconify";
 import { useController } from "react-hook-form";
+import { useSnackbar } from "src/components/snackbar";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
 const UploadKnowledgeBaseFile = ({ control, handleShowSdkInfo, isPending }) => {
+  const { enqueueSnackbar } = useSnackbar();
   const { field } = useController({
     name: "file",
     control,
@@ -17,23 +19,61 @@ const UploadKnowledgeBaseFile = ({ control, handleShowSdkInfo, isPending }) => {
     const files = Array.from(acceptedFiles || []);
 
     const safeRejected = Array.isArray(rejected) ? rejected : [];
-    if (safeRejected.some((r) => r?.errors?.some?.((e) => e?.code === "file-too-large"))) {
+
+    // Show SDK info dialog if any file is too large
+    if (
+      safeRejected.some((r) =>
+        (r?.errors || []).some((e) => e?.code === "file-too-large"),
+      )
+    ) {
       handleShowSdkInfo();
     }
 
+    // Report rejected files via snackbar (do not add them to the file list —
+    // oversized rows would block the Create button for other valid files)
+    safeRejected.forEach((item) => {
+      const { file, errors } = item || {};
+
+      // Skip rejections with no file to prevent downstream crashes
+      // (CreateKnowledgeBaseDrawer reads file.item.size / file.item.type without guards)
+      if (!file) return;
+
+      const safeErrors = errors || [];
+      const isTooSmall = safeErrors.some((e) => e?.code === "file-too-small");
+      const isInvalidType = safeErrors.some(
+        (e) => e?.code === "file-invalid-type",
+      );
+      const isTooLarge = safeErrors.some((e) => e?.code === "file-too-large");
+
+      if (isTooSmall) {
+        enqueueSnackbar(
+          `"${file.name}" is empty. Please upload a file with content.`,
+          { variant: "error" },
+        );
+      } else if (isInvalidType) {
+        enqueueSnackbar(
+          "Unsupported file type. Please upload a PDF, DOCX, RTF, or TXT file.",
+          { variant: "error" },
+        );
+      } else if (isTooLarge) {
+        enqueueSnackbar(
+          "File size is too large. Please upload a file under 5 MB.",
+          { variant: "error" },
+        );
+      } else {
+        enqueueSnackbar(
+          `"${file.name}" could not be uploaded. ${safeErrors[0]?.message || "File was rejected"}`,
+          { variant: "error" },
+        );
+      }
+    });
+
     const existingFiles = field?.value?.file || [];
 
+    // Only add accepted files — rejected files are reported via toasts / SDK dialog
     const updatedFiles = [
       ...existingFiles,
       ...files.map((file) => ({ item: file, status: "not_started" })),
-      ...safeRejected.map((item) => {
-        const { file, errors = [] } = item || {};
-        return {
-          item: file,
-          status: "error",
-          statusReason: errors?.[0]?.message || "File was rejected",
-        };
-      }),
     ];
 
     if (field?.onChange) {

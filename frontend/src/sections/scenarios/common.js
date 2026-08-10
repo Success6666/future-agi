@@ -4,6 +4,9 @@ import { AGENT_TYPES } from "../agents/constants";
 // Mirrors BE `no_of_rows.min_value`.
 export const MIN_DATASET_ROWS = 10;
 
+/** Maximum file size for scenario uploads (5 MB). */
+export const MAX_SCENARIO_FILE_SIZE = 5 * 1024 * 1024;
+
 export const CreateScenarioType = {
   DATASET: "dataset",
   SCRIPT: "script",
@@ -266,28 +269,69 @@ export const extractVersionFromScenarioName = (name, basePattern) => {
 export const createScenarioFileDropHandler =
   ({ enqueueSnackbar, onChange }) =>
   (acceptedFiles, fileRejections = []) => {
-    if (fileRejections?.length > 0) {
-      fileRejections.forEach((rejection) => {
-        const { file, errors = [] } = rejection || {};
-        if (!file) return;
+    const safeRejections = fileRejections || [];
+    let tooManyFilesSeen = false;
 
-        const isTooSmall = errors.some((e) => e?.code === "file-too-small");
-        if (isTooSmall) {
-          enqueueSnackbar(
-            `"${file.name}" is empty. Please upload a file with content.`,
-            { variant: "error" },
-          );
-        } else {
-          enqueueSnackbar(
-            `"${file.name}" could not be uploaded. ${errors[0]?.message || "File was rejected"}`,
-            { variant: "error" },
-          );
+    safeRejections.forEach((rejection) => {
+      const { file, errors } = rejection || {};
+
+      if (!file) {
+        // Still show a generic message so the drop isn't silent
+        enqueueSnackbar("File could not be uploaded", { variant: "error" });
+        return;
+      }
+
+      const safeErrors = errors || [];
+      const isTooSmall = safeErrors.some((e) => e?.code === "file-too-small");
+      const isInvalidType = safeErrors.some(
+        (e) => e?.code === "file-invalid-type",
+      );
+      const isTooLarge = safeErrors.some((e) => e?.code === "file-too-large");
+      const isTooMany = safeErrors.some((e) => e?.code === "too-many-files");
+
+      if (isTooMany) {
+        // Aggregate too-many-files into a single message below —
+        // still process other rejection types for this file.
+        tooManyFilesSeen = true;
+        if (!isTooSmall && !isInvalidType && !isTooLarge) {
+          // This file was ONLY rejected for too-many-files —
+          // don't show a per-file message for it.
+          return;
         }
-      });
-      return;
+      }
+
+      if (isTooSmall) {
+        enqueueSnackbar(
+          `"${file.name}" is empty. Please upload a file with content.`,
+          { variant: "error" },
+        );
+      } else if (isInvalidType) {
+        enqueueSnackbar(
+          "Unsupported file type. Please upload a TXT or PDF file.",
+          { variant: "error" },
+        );
+      } else if (isTooLarge) {
+        enqueueSnackbar(
+          "File size is too large. Please upload a file under 5 MB.",
+          { variant: "error" },
+        );
+      } else if (!isTooMany) {
+        enqueueSnackbar(
+          `"${file.name}" could not be uploaded. ${safeErrors[0]?.message || "File was rejected"}`,
+          { variant: "error" },
+        );
+      }
+    });
+
+    // Show a single aggregate message for too-many-files rejections
+    if (tooManyFilesSeen) {
+      enqueueSnackbar("Please upload only one file.", { variant: "error" });
     }
 
+    // Always process accepted files — react-dropzone already filters
+    // by minSize / maxSize / accept, so no manual size check is needed.
     const files = Array.from(acceptedFiles || []);
+    if (files.length === 0) return;
 
     const processedFiles = files.map((file) => ({
       file: file,
