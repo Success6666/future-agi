@@ -271,13 +271,14 @@ export const createScenarioFileDropHandler =
   (acceptedFiles, fileRejections = []) => {
     const safeRejections = fileRejections || [];
     let tooManyFilesSeen = false;
+    let filelessRejectionSeen = false;
 
     safeRejections.forEach((rejection) => {
       const { file, errors } = rejection || {};
 
       if (!file) {
-        // Still show a generic message so the drop isn't silent
-        enqueueSnackbar("File could not be uploaded", { variant: "error" });
+        // Aggregate fileless rejections into a single message below.
+        filelessRejectionSeen = true;
         return;
       }
 
@@ -290,14 +291,11 @@ export const createScenarioFileDropHandler =
       const isTooMany = safeErrors.some((e) => e?.code === "too-many-files");
 
       if (isTooMany) {
-        // Aggregate too-many-files into a single message below —
-        // still process other rejection types for this file.
+        // react-dropzone only tags too-many-files on files that already passed
+        // accept/size validation, so it's always the sole code here — aggregate
+        // it into a single message below instead of one toast per file.
         tooManyFilesSeen = true;
-        if (!isTooSmall && !isInvalidType && !isTooLarge) {
-          // This file was ONLY rejected for too-many-files —
-          // don't show a per-file message for it.
-          return;
-        }
+        return;
       }
 
       if (isTooSmall) {
@@ -315,7 +313,7 @@ export const createScenarioFileDropHandler =
           "File size is too large. Please upload a file under 5 MB.",
           { variant: "error" },
         );
-      } else if (!isTooMany) {
+      } else {
         enqueueSnackbar(
           `"${file.name}" could not be uploaded. ${safeErrors[0]?.message || "File was rejected"}`,
           { variant: "error" },
@@ -326,6 +324,11 @@ export const createScenarioFileDropHandler =
     // Show a single aggregate message for too-many-files rejections
     if (tooManyFilesSeen) {
       enqueueSnackbar("Please upload only one file.", { variant: "error" });
+    }
+
+    // And one for fileless rejections so the drop isn't silent
+    if (filelessRejectionSeen) {
+      enqueueSnackbar("File could not be uploaded", { variant: "error" });
     }
 
     // Always process accepted files — react-dropzone already filters
