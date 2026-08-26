@@ -2,6 +2,7 @@ import { getRandomId, safeParse } from "src/utils/utils";
 import { useQuery } from "@tanstack/react-query";
 import axios, { endpoints } from "src/utils/axios";
 import { AnnotationLabelTypes, PROJECT_SOURCE } from "src/utils/constants";
+import { SpanTypes } from "src/utils/constant";
 import CustomTraceHeaderRenderer from "./Renderers/CustomTraceHeaderRenderer";
 import {
   getAnnotationMetricFilterDefinition,
@@ -25,15 +26,26 @@ import NewAnnotationCellRenderer from "../../agents/NewAnnotationCellRenderer";
 import { buildApiFilterFromPanelRow } from "src/api/contracts/filter-contract";
 
 // Normalize config object keys from snake_case to camelCase while preserving
-// id values as snake_case. Shared by the trace and span grids.
-export const normalizeConfigKeys = (config) =>
-  config?.map((obj) => {
+// id values as snake_case. Shared by the trace and span grids. Dedup by id: the
+// spans config can list a column twice → AG Grid would otherwise mint a phantom
+// `<id>_1` column.
+export const normalizeConfigKeys = (config) => {
+  if (!Array.isArray(config)) return config;
+  const seen = new Set();
+  const out = [];
+  for (const obj of config) {
     const result = {};
     for (const [key, value] of Object.entries(obj)) {
       result[key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())] = value;
     }
-    return result;
-  });
+    if (result.id != null) {
+      if (seen.has(result.id)) continue;
+      seen.add(result.id);
+    }
+    out.push(result);
+  }
+  return out;
+};
 
 export const AllowedGroups = [
   "Evaluation Metrics",
@@ -81,15 +93,7 @@ export const generateObserveTraceFilterDefinition = (
       multiSelect: true,
       filterType: {
         type: "option",
-        options: [
-          { label: "Chain", value: "chain" },
-          { label: "Retriever", value: "retriever" },
-          { label: "Generation", value: "generation" },
-          { label: "LLM", value: "llm" },
-          { label: "Tool", value: "tool" },
-          { label: "Agent", value: "agent" },
-          { label: "Embedding", value: "embedding" },
-        ],
+        options: [...SpanTypes],
       },
     },
     {
@@ -175,15 +179,7 @@ export const generateSpanObserveFilterDefinition = (
       multiSelect: true,
       filterType: {
         type: "option",
-        options: [
-          { label: "Chain", value: "chain" },
-          { label: "Retriever", value: "retriever" },
-          { label: "Generation", value: "generation" },
-          { label: "LLM", value: "llm" },
-          { label: "Tool", value: "tool" },
-          { label: "Agent", value: "agent" },
-          { label: "Embedding", value: "embedding" },
-        ],
+        options: [...SpanTypes],
       },
     },
   ];
@@ -885,6 +881,10 @@ export const FILTER_FOR_HAS_EVAL = {
     filter_value: true,
   },
 };
+
+// Strip UI-only keys per UI_FILTER_ITEM_KEYS in src/api/contracts/filter-contract.js.
+export const toBackendFilters = (filters) =>
+  (filters || []).map(({ id, _meta, col_type, ...rest }) => rest);
 
 export const FILTER_FOR_ERRORS = {
   column_id: "status",

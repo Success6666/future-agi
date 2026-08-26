@@ -18,8 +18,10 @@ import { isContentNotEmpty } from "./Playground/common";
 import { modelConfigDefault, PromptWorkbenchContext } from "./WorkbenchContext";
 import {
   getVariables,
+  handleAuthFailClose,
   normalizeConfigurationForLoad,
   normalizeConfigurationForSave,
+  normalizeMessagesForLoad,
   runPromptOverSocket,
 } from "./common";
 import logger from "src/utils/logger";
@@ -131,6 +133,8 @@ const WorkbenchProvider = ({ children }) => {
   const stoppedIds = useRef([]);
   const runningVersionIndexMapping = useRef({});
   const activeSocketsRef = useRef({});
+  // Skip the next getPrompt(latest) load when collapsing compare -> single.
+  const skipLatestLoadOnce = useRef(false);
   const promptStreamUrl = usePromptStreamUrl();
 
   // Close all active sockets on unmount to prevent leaks
@@ -371,6 +375,22 @@ const WorkbenchProvider = ({ children }) => {
 
   const setWsData = useCallback(
     (event) => {
+      // Surface backend-sent error frames before the loading gate — the
+      // whole point is to interrupt a stuck run, so this must run when
+      // compareIsLoading/isLoading is true.
+      if (event?.type === "error") {
+        // Skip late-arriving errors for runs the user already stopped
+        // (mirrors the stoppedIds guard the streaming branch uses below).
+        if (stoppedIds.current.includes(event?.session_uuid)) {
+          return;
+        }
+        enqueueSnackbar(event?.message || "Prompt run failed.", {
+          variant: "error",
+        });
+        setLoadingStatus((d) => d.map(() => false));
+        return;
+      }
+
       if (compareIsLoading || isLoading) {
         return;
       }
@@ -550,6 +570,12 @@ const WorkbenchProvider = ({ children }) => {
     if (!data) {
       return;
     }
+    // Collapse already selected the remaining version; don't let latest overwrite it.
+    if (skipLatestLoadOnce.current) {
+      skipLatestLoadOnce.current = false;
+      return;
+    }
+    const loadedVersion = selectedVersions?.[0]?.version;
     setPromptName(data?.name);
     setSelectedVersions([
       {
@@ -567,8 +593,18 @@ const WorkbenchProvider = ({ children }) => {
       setCurrentTab("Playground");
     }
 
-    if (data?.prompt_config?.[0]?.messages && !prompts?.[0]?.prompts.length) {
-      const newPrompts = data?.prompt_config?.[0]?.messages?.map((prompt) => ({
+    // Load messages when the editor is empty or the fetched version differs from the
+    // one already loaded. Guarding only on empty `prompts` left stale content from
+    // another version in the editor after a switch; reloading on every `data` refetch
+    // (rename/commit/tag invalidations) would clobber the current same-version editor.
+    const isVersionSwitch = loadedVersion !== data?.version;
+    if (
+      data?.prompt_config?.[0]?.messages &&
+      (!prompts?.[0]?.prompts?.length || isVersionSwitch)
+    ) {
+      const newPrompts = normalizeMessagesForLoad(
+        data?.prompt_config?.[0]?.messages,
+      ).map((prompt) => ({
         ...prompt,
         id: getRandomId(),
       }));
@@ -652,6 +688,20 @@ const WorkbenchProvider = ({ children }) => {
               closeSocketByIndex(`compare-${versionIndex}`);
               reject({ version, error: err });
             },
+            onClose: (event) => {
+              // Server-initiated auth-fail closes: settle the version's
+              // Promise, clear its spinner, and surface the reason so
+              // Promise.allSettled + the UI don't hang.
+              handleAuthFailClose({
+                event,
+                cleanup: () => {
+                  closeSocketByIndex(`compare-${versionIndex}`);
+                  setLoadingStatusByIndex(versionIndex, false);
+                },
+                reject,
+                buildRejection: (reason) => ({ version, error: reason }),
+              });
+            },
           });
           activeSocketsRef.current[`compare-${versionIndex}`] = socket;
         });
@@ -698,6 +748,7 @@ const WorkbenchProvider = ({ children }) => {
     const newModelConfigs = [];
     const newPlaceholders = [];
     const newPlaceholdersData = {};
+    const newVariableData = {};
 
     compareVersionData.data.forEach((version, _idx) => {
       newVersions.push({
@@ -712,12 +763,23 @@ const WorkbenchProvider = ({ children }) => {
       });
 
       newPrompts.push({
-        prompts: version?.prompt_config_snapshot?.messages,
+        prompts: normalizeMessagesForLoad(
+          version?.prompt_config_snapshot?.messages,
+        ),
         id: getRandomId(),
       });
 
       if (version?.placeholders) {
         Object.assign(newPlaceholdersData, version?.placeholders);
+      }
+
+      // Populate the shared variable panel; base (first) version wins on conflicts.
+      if (version?.variable_names) {
+        for (const [key, value] of Object.entries(version.variable_names)) {
+          if (!(key in newVariableData)) {
+            newVariableData[key] = value;
+          }
+        }
       }
 
       newModelConfigs.push({
@@ -756,6 +818,7 @@ const WorkbenchProvider = ({ children }) => {
     setResults(newResults);
     setPlaceholders(newPlaceholders);
     setPlaceholderData(newPlaceholdersData);
+    setVariableData(newVariableData);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compareVersionData]);
 
@@ -1019,7 +1082,21 @@ const WorkbenchProvider = ({ children }) => {
                 reason: typeof err === "string" ? err : "prompt_stream_error",
               });
             },
-            onClose: () => {
+            onClose: (event) => {
+              // Server-initiated auth-fail closes: don't fall back to
+              // polling a run that never started. Settle the Promise and
+              // cancel the fallback timer.
+              const handled = handleAuthFailClose({
+                event,
+                cleanup: () => {
+                  completed = true;
+                  clearFallbackTimer();
+                  closeSocketByIndex(`run-${index}`);
+                  setLoadingStatusByIndex(index, false);
+                },
+                reject,
+              });
+              if (handled) return;
               if (!completed) {
                 fallbackToHttpPolling({
                   startRun: !receivedSocketMessage,
@@ -1232,11 +1309,12 @@ const WorkbenchProvider = ({ children }) => {
       };
     });
 
-    const newPrompts =
-      version?.prompt_config_snapshot?.messages?.map((rest) => ({
-        ...rest,
-        id: getRandomId(),
-      })) || [];
+    const newPrompts = normalizeMessagesForLoad(
+      version?.prompt_config_snapshot?.messages,
+    ).map((rest) => ({
+      ...rest,
+      id: getRandomId(),
+    }));
 
     setPrompts([{ prompts: newPrompts, id: getRandomId() }]);
 
@@ -1378,6 +1456,7 @@ const WorkbenchProvider = ({ children }) => {
     const newPlaceholders = [];
     const newResults = [];
     const newModelConfigs = [];
+    const addedVariableData = {};
 
     newCompareVersions.forEach((eachCompareVersions) => {
       newVersions.push({
@@ -1390,9 +1469,15 @@ const WorkbenchProvider = ({ children }) => {
       });
 
       newPrompts.push({
-        prompts: eachCompareVersions.prompt_config_snapshot.messages,
+        prompts: normalizeMessagesForLoad(
+          eachCompareVersions.prompt_config_snapshot.messages,
+        ),
         id: getRandomId(),
       });
+
+      if (eachCompareVersions?.variable_names) {
+        Object.assign(addedVariableData, eachCompareVersions.variable_names);
+      }
 
       const placeholderArray =
         eachCompareVersions.prompt_config_snapshot.placeholders || [];
@@ -1422,6 +1507,8 @@ const WorkbenchProvider = ({ children }) => {
     setPlaceholders((e) => [e[0], ...newPlaceholders]);
     setModelConfig((e) => [e[0], ...newModelConfigs]);
     setResults((e) => [e[0], ...newResults]);
+    // Merge added versions' variables into the shared panel; base (index 0) wins on conflicts.
+    setVariableData((prev) => ({ ...addedVariableData, ...prev }));
   };
 
   const removeFromCompare = (index) => {
@@ -1430,6 +1517,10 @@ const WorkbenchProvider = ({ children }) => {
     setSelectedVersions((pre) => {
       const newPre = [...pre];
       newPre.splice(index, 1);
+      // Collapsing to one version re-enables getPrompt(latest); skip that load.
+      if (newPre.length === 1) {
+        skipLatestLoadOnce.current = true;
+      }
       return newPre;
     });
     setPrompts((pre) => {

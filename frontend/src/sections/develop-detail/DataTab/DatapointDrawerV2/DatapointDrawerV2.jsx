@@ -79,7 +79,7 @@ const ViewDetailsCellRenderer = (props) => {
         ...node?.data?.data?.description,
         evalName: node?.data?.data?.eval_name,
         metadata: metadata,
-        evalMetricId: data?.data?.column?.col?.sourceId,
+        evalMetricId: data?.data?.column?.col?.source_id,
       });
     }
   };
@@ -298,7 +298,6 @@ const DatapointDrawerChild = () => {
     evalMetaBySourceId[column?.col?.sourceId || column?.col?.source_id]
       ?.templateType === "composite";
 
-
   const runEvalData = useMemo(() => {
     const evalColumns = allColumns.filter((i) => i.originType === "evaluation");
     const currentRowData = datapoint?.rowData ? datapoint?.rowData : [];
@@ -307,15 +306,8 @@ const DatapointDrawerChild = () => {
       const columnId = column.field;
       const rowDataForColumn = currentRowData?.[columnId];
 
-      // The axios snake→camel response interceptor was removed
-      // (2026-04-12) so backend payloads land as snake_case in JS.
-      // Read both shapes for compatibility with any cached/stale data
-      // and re-emit as snake_case for downstream consumers.
-      const cellValue =
-        rowDataForColumn?.cell_value ?? rowDataForColumn?.cellValue ?? null;
-      const valueInfosOutput =
-        rowDataForColumn?.value_infos?.output ??
-        rowDataForColumn?.valueInfos?.output;
+      const cellValue = rowDataForColumn?.cell_value ?? null;
+      const valueInfosOutput = rowDataForColumn?.value_infos?.output;
       const baseData = {
         data: {
           column: {
@@ -362,12 +354,12 @@ const DatapointDrawerChild = () => {
 
       return {
         ...currentField,
+        eval_name: column?.headerName,
         metadata: enhancedColumn?.metadata,
-        evalMetricId: column?.col?.sourceId,
+        evalMetricId: column?.col?.source_id,
       };
-    } else {
-      return null;
     }
+    return null;
   });
   const evalValueInfos = evalOpen?.value_infos
   const evalCellValue = evalOpen?.cell_value 
@@ -471,11 +463,11 @@ const DatapointDrawerChild = () => {
         setDatapoint({
           index: nextIndex,
           rowData: rowData,
-          valueInfos: rows[nextIndex]?.rowData?.valueInfos,
+          value_infos: rows[nextIndex]?.rowData?.value_infos,
         });
         if (evalOpen) {
           const column = allColumns.find(
-            (i) => i?.col?.sourceId === evalOpen?.evalMetricId,
+            (i) => i?.col?.source_id === evalOpen?.evalMetricId,
           );
 
           setEvalOpen({
@@ -497,7 +489,7 @@ const DatapointDrawerChild = () => {
             setDatapoint({
               index: nextIndex,
               rowData: nextCellData,
-              valueInfos: nextCellData?.valueInfos,
+              value_infos: nextCellData?.value_infos,
             });
             setRows((prev) => {
               const newRows = [...prev];
@@ -509,7 +501,7 @@ const DatapointDrawerChild = () => {
             });
             if (evalOpen) {
               const column = allColumns.find(
-                (i) => i?.col?.sourceId === evalOpen?.evalMetricId,
+                (i) => i?.col?.source_id === evalOpen?.evalMetricId,
               );
               setEvalOpen({
                 ...evalOpen,
@@ -557,11 +549,11 @@ const DatapointDrawerChild = () => {
           setDatapoint({
             index: nextIndex,
             rowData: nextCellData,
-            valueInfos: nextCellData?.valueInfos,
+            value_infos: nextCellData?.value_infos,
           });
           if (evalOpen) {
             const column = allColumns.find(
-              (i) => i?.col?.sourceId === evalOpen?.evalMetricId,
+              (i) => i?.col?.source_id === evalOpen?.evalMetricId,
             );
             setEvalOpen({
               ...evalOpen,
@@ -579,11 +571,11 @@ const DatapointDrawerChild = () => {
       setDatapoint({
         index: datapoint.index - 1,
         rowData,
-        valueInfos: rows[datapoint.index - 1]?.rowData?.valueInfos,
+        value_infos: rows[datapoint.index - 1]?.rowData?.value_infos,
       });
       if (evalOpen) {
         const column = allColumns.find(
-          (i) => i?.col?.sourceId === evalOpen?.evalMetricId,
+          (i) => i?.col?.source_id === evalOpen?.evalMetricId,
         );
         setEvalOpen({
           ...evalOpen,
@@ -592,6 +584,19 @@ const DatapointDrawerChild = () => {
       }
     }
   };
+
+  useEffect(() => {
+    const api = gridApi.current;
+    document.querySelectorAll(".ag-row.active-row").forEach((el) => {
+      el.classList.remove("active-row");
+    });
+    if (datapoint?.index != null) {
+      document
+        .querySelectorAll(`.ag-row[row-index="${datapoint.index}"]`)
+        .forEach((el) => el.classList.add("active-row"));
+      api?.ensureIndexVisible(datapoint.index);
+    }
+  }, [datapoint?.index]);
 
   const navStateRef = useRef({});
   navStateRef.current = {
@@ -913,7 +918,7 @@ const DatapointDrawerChild = () => {
                     )}
                   </Box>
                 </Box>
-               
+
                 {!evalOpenIsCode && !isCompositeEval && (
                   <ErrorLocalizationCellSection
                     evalOpen={evalOpen}
@@ -984,10 +989,28 @@ const DatapointDrawerChild = () => {
                     fullWidth
                     size="small"
                     onClick={() => {
+                      // Capture the currently-open eval (not the cell that
+                      // opened the datapoint drawer), so the feedback panel
+                      // shows this eval's reason and posts the matching eval
+                      // column / metric.
+                      const evalColumn =
+                        allColumns.find(
+                          (c) => c?.col?.source_id === evalOpen?.evalMetricId,
+                        )?.col ?? column?.col;
                       setAddEvaluationFeeback({
-                        ...column?.col,
+                        ...evalColumn,
                         ...datapoint,
+                        sourceId: evalOpen?.evalMetricId ?? evalColumn?.source_id,
                         rowData: datapoint?.rowData,
+                        value:
+                          evalOpen?.cell_value ??
+                          evalOpen?.value ??
+                          datapoint?.cell_value ??
+                          datapoint?.value,
+                        valueInfos:
+                          evalOpen?.value_infos ??
+                          evalOpen?.valueInfos ??
+                          datapoint?.valueInfos,
                       });
                       setEvalOpen(null);
                       trackEvent(Events.datasetAddFeedbackClicked, {

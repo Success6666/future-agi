@@ -6,7 +6,7 @@ Tests for /tracer/project/ endpoints.
 
 import json
 import uuid
-from datetime import timedelta, timezone as datetime_timezone
+from datetime import UTC, timedelta
 
 import pytest
 from django.utils import timezone
@@ -32,7 +32,7 @@ def get_result(response):
 
 
 def _iso_z(value):
-    return value.astimezone(datetime_timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _chart_filter(column_id, filter_type, filter_op, filter_value, col_type=None):
@@ -335,7 +335,8 @@ class TestProjectRetrieveAPI:
         data = get_result(response)
         assert data["name"] == "Test Project"
         assert data.get("trace_type") == "experiment"
-        assert "sampling_rate" in data  # Should include sampling rate
+        assert "sampling_rate" in data
+        assert data["sampling_rate"] == 0
 
     def test_retrieve_project_not_found(self, auth_client):
         """Retrieve non-existent project returns error."""
@@ -390,6 +391,77 @@ class TestProjectDeleteAPI:
         assert response.status_code == status.HTTP_200_OK
 
         # Verify project is soft deleted
+        project.refresh_from_db()
+        assert project.deleted is True
+
+    def test_delete_project_publishes_cache_invalidation(
+        self, auth_client, project, django_capture_on_commit_callbacks, mocker
+    ):
+        """Bulk delete publishes a collector cache-invalidation for the id."""
+        publish = mocker.patch(
+            "tracer.services.project_deletion.publish_project_invalidation"
+        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = auth_client.delete(
+                "/tracer/project/",
+                {"project_ids": [str(project.id)], "project_type": "experiment"},
+                format="json",
+            )
+        assert response.status_code == status.HTTP_200_OK
+        publish.assert_called_once_with([str(project.id)])
+
+    def test_destroy_project_publishes_cache_invalidation(
+        self, auth_client, project, django_capture_on_commit_callbacks, mocker
+    ):
+        """Single destroy() path also publishes the invalidation for its id."""
+        publish = mocker.patch(
+            "tracer.services.project_deletion.publish_project_invalidation"
+        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = auth_client.delete(f"/tracer/project/{project.id}/")
+        assert response.status_code == status.HTTP_200_OK
+        publish.assert_called_once_with([str(project.id)])
+
+    def test_delete_project_publishes_on_wire_contract(
+        self, auth_client, project, django_capture_on_commit_callbacks, mocker
+    ):
+        """The publish uses the literal channel + id payload the collector reads.
+
+        Patches ``redis.Redis`` (not the helper) so a typo in the channel
+        constant on the Python side is caught.
+        """
+        pipe = mocker.MagicMock()
+        client = mocker.MagicMock()
+        client.pipeline.return_value = pipe
+        mocker.patch(
+            "tracer.services.project_deletion.redis.Redis.from_url",
+            return_value=client,
+        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = auth_client.delete(
+                "/tracer/project/",
+                {"project_ids": [str(project.id)], "project_type": "experiment"},
+                format="json",
+            )
+        assert response.status_code == status.HTTP_200_OK
+        pipe.publish.assert_called_once_with("fi:project:invalidate", str(project.id))
+        pipe.execute.assert_called_once()
+
+    def test_delete_project_publish_failure_is_swallowed(
+        self, auth_client, project, django_capture_on_commit_callbacks, mocker
+    ):
+        """A Redis failure during publish never fails the delete."""
+        mocker.patch(
+            "tracer.services.project_deletion.redis.Redis.from_url",
+            side_effect=ConnectionError("redis down"),
+        )
+        with django_capture_on_commit_callbacks(execute=True):
+            response = auth_client.delete(
+                "/tracer/project/",
+                {"project_ids": [str(project.id)], "project_type": "experiment"},
+                format="json",
+            )
+        assert response.status_code == status.HTTP_200_OK
         project.refresh_from_db()
         assert project.deleted is True
 

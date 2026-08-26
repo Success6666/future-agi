@@ -6,17 +6,17 @@ Uses separate loading for workflows (no Django) and activities (has Django)
 to avoid sandbox validation issues.
 """
 
-from typing import Callable, Dict, List, Type
+from collections.abc import Callable
 
 # =============================================================================
 # Registry Storage
 # =============================================================================
 
 # Maps queue name -> list of workflow classes
-_workflow_registry: Dict[str, List[Type]] = {}
+_workflow_registry: dict[str, list[type]] = {}
 
 # Maps queue name -> list of activity functions
-_activity_registry: Dict[str, List[Callable]] = {}
+_activity_registry: dict[str, list[Callable]] = {}
 
 # Track registration state
 _workflows_registered: bool = False
@@ -53,7 +53,6 @@ TEMPORAL_ACTIVITY_MODULES = [
     # tracer tasks
     "tracer.tasks",
     "tracer.tasks.trace_scanner",
-    "tracer.tasks.recordings_rehost",
     "tracer.utils.span",
     "tracer.utils.eval",
     "tracer.utils.observability_provider",
@@ -67,6 +66,7 @@ TEMPORAL_ACTIVITY_MODULES = [
     "simulate.tasks.scenario_tasks",
     "simulate.services.test_executor",
     "simulate.tasks.chat_sim",
+    "simulate.tasks.alk_sim",
     # voice tasks
     "ee.voice.tasks.call_log_tasks",
     # integration tasks
@@ -78,7 +78,7 @@ TEMPORAL_ACTIVITY_MODULES = [
     # Self-hosted deployment registration and usage heartbeat
     "tfc.temporal.schedules.deployment_telemetry",
     # Deployment telemetry receiver-side integrations (PostHog, HubSpot, Slack)
-    "ee.usage.services.deployment_telemetry_integrations",
+    "ee.cloud.telemetry.deployment_telemetry_integrations",
 ]
 
 
@@ -87,7 +87,7 @@ TEMPORAL_ACTIVITY_MODULES = [
 # =============================================================================
 
 
-def register_workflows(queue: str, workflows: List[Type]) -> None:
+def register_workflows(queue: str, workflows: list[type]) -> None:
     """Register workflow classes for a specific queue."""
     if queue not in _workflow_registry:
         _workflow_registry[queue] = []
@@ -97,7 +97,7 @@ def register_workflows(queue: str, workflows: List[Type]) -> None:
             _workflow_registry[queue].append(workflow_class)
 
 
-def register_activities(queue: str, activities: List[Callable]) -> None:
+def register_activities(queue: str, activities: list[Callable]) -> None:
     """Register activity functions for a specific queue."""
     if queue not in _activity_registry:
         _activity_registry[queue] = []
@@ -108,9 +108,9 @@ def register_activities(queue: str, activities: List[Callable]) -> None:
 
 
 def register_for_queues(
-    queues: List[str],
-    workflows: List[Type] = None,
-    activities: List[Callable] = None,
+    queues: list[str],
+    workflows: list[type] = None,
+    activities: list[Callable] = None,
 ) -> None:
     """Register workflows and activities for multiple queues at once."""
     for queue in queues:
@@ -200,6 +200,19 @@ def _ensure_workflows_registered() -> None:
         get_logger(__name__).warning(
             "could_not_load_evaluation_workflows", error=str(e)
         )
+
+    # Register per-task eval-task workflows for tasks_s queue
+    try:
+        from tfc.temporal.eval_tasks import get_workflows as get_eval_task_workflows
+
+        register_for_queues(
+            queues=["tasks_s", "default"],
+            workflows=get_eval_task_workflows(),
+        )
+    except ImportError as e:
+        from tfc.logging.temporal import get_logger
+
+        get_logger(__name__).warning("could_not_load_eval_task_workflows", error=str(e))
 
     # Register ground truth embedding workflows for tasks_xl queue
     try:
@@ -339,11 +352,31 @@ def _ensure_workflows_registered() -> None:
             "could_not_load_call_execution_workflows", error=str(e)
         )
 
+    # Register the hosted simulation-runner workflow on its dedicated queue.
+    # This workflow dispatches the released SDK to the simulation-runner worker
+    # (plan §9); it runs on `simulation_runner`, not the native call queues.
+    try:
+        from simulate.temporal.constants import QUEUE_RUNNER
+        from simulate.temporal.workflows.simulation_runner_workflow import (
+            SimulationRunnerWorkflow,
+        )
+
+        register_for_queues(
+            queues=[QUEUE_RUNNER],
+            workflows=[SimulationRunnerWorkflow],
+        )
+    except ImportError as e:
+        from tfc.logging.temporal import get_logger
+
+        get_logger(__name__).warning(
+            "could_not_load_simulation_runner_workflow", error=str(e)
+        )
+
     # Register billing/usage workflows for default queue
     # UsageConsumerWorkflow (long-running singleton) + MonthlyResetWorkflow
     try:
         try:
-            from ee.usage.temporal import get_workflows as get_billing_workflows
+            from ee.cloud.temporal import get_workflows as get_billing_workflows
         except ImportError:
             get_billing_workflows = None
 
@@ -419,6 +452,18 @@ def _ensure_activities_registered() -> None:
         log.info("registered_evaluation_activities", queues=["tasks_s", "default"])
     except ImportError as e:
         log.warning("could_not_load_evaluation_activities", error=str(e))
+
+    # Register per-task eval-task activities for tasks_s queue
+    try:
+        from tfc.temporal.eval_tasks import get_activities as get_eval_task_activities
+
+        register_for_queues(
+            queues=["tasks_s", "default"],
+            activities=get_eval_task_activities(),
+        )
+        log.info("registered_eval_task_activities", queues=["tasks_s", "default"])
+    except ImportError as e:
+        log.warning("could_not_load_eval_task_activities", error=str(e))
 
     # Register ground truth embedding activities for tasks_xl queue
     try:
@@ -552,6 +597,29 @@ def _ensure_activities_registered() -> None:
         log.info("registered_call_execution_small_activities", count=9)
     except ImportError as e:
         log.warning("could_not_load_call_execution_small_activities", error=str(e))
+
+    # Hosted simulation-runner activities (plan §9) — dedicated queue. The
+    # runner spawns the released SDK as a child process; these do not run on the
+    # native voice queues.
+    try:
+        from simulate.temporal.activities.hosted_runner import (
+            build_runner_job,
+            finalize_hosted_execution,
+            run_hosted_sdk_job,
+        )
+        from simulate.temporal.constants import QUEUE_RUNNER
+
+        register_for_queues(
+            queues=[QUEUE_RUNNER],
+            activities=[
+                build_runner_job,
+                run_hosted_sdk_job,
+                finalize_hosted_execution,
+            ],
+        )
+        log.info("registered_hosted_runner_activities", count=3)
+    except ImportError as e:
+        log.warning("could_not_load_hosted_runner_activities", error=str(e))
 
     # Voice small activities (Enterprise Edition)
     try:
@@ -723,7 +791,7 @@ def _ensure_activities_registered() -> None:
     except ImportError as e:
         log.warning("could_not_load_dataset_optimization_activities", error=str(e))
 
-    # Register billing activities (Stripe usage reporting, dunning)
+    # Register billing activities (Stripe usage reporting)
     try:
         from tfc.temporal.billing import get_activities as get_billing_activities
 
@@ -739,7 +807,7 @@ def _ensure_activities_registered() -> None:
     # Register usage metering activities (consumer, sync, monthly reset)
     try:
         try:
-            from ee.usage.temporal import get_activities as get_usage_activities
+            from ee.cloud.temporal import get_activities as get_usage_activities
         except ImportError:
             get_usage_activities = None
 
@@ -749,7 +817,9 @@ def _ensure_activities_registered() -> None:
                 queues=["default"],
                 activities=usage_activities,
             )
-            log.info("registered_usage_metering_activities", count=len(usage_activities))
+            log.info(
+                "registered_usage_metering_activities", count=len(usage_activities)
+            )
     except ImportError as e:
         log.warning("could_not_load_usage_metering_activities", error=str(e))
 
@@ -780,7 +850,7 @@ def _import_temporal_activity_modules() -> None:
 # =============================================================================
 
 
-def get_workflows_for_queue(queue: str) -> List[Type]:
+def get_workflows_for_queue(queue: str) -> list[type]:
     """
     Get workflow classes for a queue.
     Does NOT import Django - safe to call before Worker creation.
@@ -789,7 +859,7 @@ def get_workflows_for_queue(queue: str) -> List[Type]:
     return _workflow_registry.get(queue, [])
 
 
-def get_activities_for_queue(queue: str) -> List[Callable]:
+def get_activities_for_queue(queue: str) -> list[Callable]:
     """
     Get activity functions for a queue.
     DOES import Django - only call when setting up Worker activities.
@@ -798,14 +868,14 @@ def get_activities_for_queue(queue: str) -> List[Callable]:
     return _activity_registry.get(queue, [])
 
 
-def get_all_queues() -> List[str]:
+def get_all_queues() -> list[str]:
     """Get all queues that have registered workflows or activities."""
     _ensure_workflows_registered()
     _ensure_activities_registered()
     return list(set(list(_workflow_registry.keys()) + list(_activity_registry.keys())))
 
 
-def get_all_workflows() -> List[Type]:
+def get_all_workflows() -> list[type]:
     """Get all unique workflow classes across all queues."""
     _ensure_workflows_registered()
     all_workflows = []
@@ -818,7 +888,7 @@ def get_all_workflows() -> List[Type]:
     return all_workflows
 
 
-def get_all_activities() -> List[Callable]:
+def get_all_activities() -> list[Callable]:
     """Get all unique activity functions across all queues."""
     _ensure_activities_registered()
     all_activities = []

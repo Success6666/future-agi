@@ -1,13 +1,17 @@
-import React, {
-  useMemo,
-  useCallback,
-  useEffect,
-  useRef,
-  startTransition,
-} from "react";
+import React, { useMemo, useCallback, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
-import { Box, Paper, useTheme, CircularProgress, Alert } from "@mui/material";
+import { LoadingScreen } from "src/components/loading-screen";
+import {
+  Box,
+  Paper,
+  useTheme,
+  Alert,
+  Button,
+} from "@mui/material";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router";
+import { ErrorBoundary } from "react-error-boundary";
+import { logger } from "src/utils/logger";
+import { isChunkError } from "src/utils/lazyWithRetry";
 
 import { useObserveHeader } from "../project/context/ObserveHeaderContext";
 import { useUrlState } from "src/routes/hooks/use-url-state";
@@ -32,28 +36,61 @@ import { resetTabStore } from "./LLMTracing/tabStore";
 
 // Loading component for tab content
 const TabContentLoader = () => (
-  <Box
-    sx={{
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      height: "200px",
-      backgroundColor: "background.paper",
-    }}
-  >
-    <CircularProgress />
-  </Box>
+  <LoadingScreen
+    variant="orbit"
+    sx={{ minHeight: "60vh", backgroundColor: "background.paper" }}
+  />
 );
 
-// Error boundary component
-const TabErrorBoundary = ({ children }) => {
+const TAB_ERROR_MESSAGE = "Could not load this tab";
+
+const TabContentError = ({ error, resetErrorBoundary }) => {
+  // Chunk load errors bubble to the app-level boundary's silent reload.
+  if (isChunkError(error)) throw error;
+
+  // A full reload actually changes state, unlike resetErrorBoundary() alone.
+  const handleRetry = () => {
+    resetErrorBoundary();
+    window.location.reload();
+  };
+
   return (
-    <React.Suspense fallback={<TabContentLoader />}>{children}</React.Suspense>
+    <Box sx={{ p: 2, backgroundColor: "background.paper" }}>
+      <Alert
+        severity="error"
+        action={
+          <Button color="inherit" size="small" onClick={handleRetry}>
+            Retry
+          </Button>
+        }
+      >
+        {TAB_ERROR_MESSAGE}
+      </Alert>
+    </Box>
+  );
+};
+
+TabContentError.propTypes = {
+  error: PropTypes.instanceOf(Error),
+  resetErrorBoundary: PropTypes.func.isRequired,
+};
+
+// Contains a tab's render errors to the tab, so one bad cell cannot blank the page.
+const TabErrorBoundary = ({ children, resetKey }) => {
+  return (
+    <ErrorBoundary
+      FallbackComponent={TabContentError}
+      resetKeys={[resetKey]}
+      onError={(error) => logger.error("Observe tab render failed", error)}
+    >
+      <React.Suspense fallback={<TabContentLoader />}>{children}</React.Suspense>
+    </ErrorBoundary>
   );
 };
 
 TabErrorBoundary.propTypes = {
   children: PropTypes.node.isRequired,
+  resetKey: PropTypes.string,
 };
 
 // Map observe tab keys to route + URL params
@@ -169,15 +206,7 @@ const ObservePage = React.memo(() => {
         viewTabType = view?.tab_type ?? "traces";
       }
 
-      // Apply effects (activeViewConfig → apply effect → many setters) aren't
-      // urgent for tab responsiveness. Defer via startTransition so the
-      // navigation and URL update feel snappy while the filter apply runs as
-      // a non-blocking transition.
-      startTransition(() => {
-        setActiveViewConfig(activeConfig);
-      });
-
-      // Navigate to the appropriate route
+      let navTo = null;
       if (tabKey.startsWith("view-")) {
         const isUsersView =
           viewTabType === "users" || viewTabType === "user_detail";
@@ -252,9 +281,7 @@ const ObservePage = React.memo(() => {
           }
         }
 
-        navigate(`${basePath}?${params.toString()}`, {
-          replace: true,
-        });
+        navTo = `${basePath}?${params.toString()}`;
       } else {
         const config = TAB_TO_ROUTE[tabKey];
         if (config) {
@@ -262,9 +289,14 @@ const ObservePage = React.memo(() => {
           const params = new URLSearchParams();
           params.set("tab", tabKey);
           Object.entries(config.params).forEach(([k, v]) => params.set(k, v));
-          navigate(`${basePath}?${params.toString()}`, { replace: true });
+          navTo = `${basePath}?${params.toString()}`;
         }
       }
+
+      // Set config + navigate together so React batches them into one render — a
+      // deferred config set left the URL naming a view while config was null.
+      setActiveViewConfig(activeConfig);
+      if (navTo) navigate(navTo, { replace: true });
     },
     [observeId, navigate, queryClient, setActiveViewConfig],
   );
@@ -370,7 +402,7 @@ const ObservePage = React.memo(() => {
 
       {/* Content Section */}
       <Box sx={contentStyles}>
-        <TabErrorBoundary>
+        <TabErrorBoundary resetKey={currentRouteSegment}>
           <Outlet />
         </TabErrorBoundary>
       </Box>

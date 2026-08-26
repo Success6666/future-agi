@@ -11,7 +11,8 @@ import CallLogsHeaderCellRenderer from "./CallLogs/CallLogsHeaderCellRenderer";
 import { useQuery } from "@tanstack/react-query";
 import axios, { endpoints } from "src/utils/axios";
 import { Box, Skeleton } from "@mui/material";
-import { AGENT_TYPES, isLiveKitProvider } from "./constants";
+import EvaluationCell from "src/sections/projects/LLMTracing/Renderers/EvaluationCell";
+import { AGENT_TYPES, isLiveKitProvider, VOICE_TRANSPORT } from "./constants";
 import AnnotationHeaderCellRenderer from "./CallLogs/AnnotationHeaderCellRenderer";
 import NewAnnotationCellRenderer from "./NewAnnotationCellRenderer";
 
@@ -43,7 +44,13 @@ export const stepFields = [
     "observabilityEnabled",
     "model",
   ],
-  ["description", "knowledgeBase", "inbound", "commitMessage"],
+  [
+    "description",
+    "knowledgeBase",
+    "inbound",
+    "targetSpeaksFirst",
+    "commitMessage",
+  ],
 ];
 
 export const emptyAgentSteps = [
@@ -83,14 +90,11 @@ export const createAgentDefinitionSchema = (options) => {
 
       // Configuration
       provider: z.string().optional(),
-      assistantId: keysRequired
-        ? z.string().min(1, "Assistant ID is required")
-        : z.string().optional(),
+      // Required-ness lives in the superRefine below, which can see the provider.
+      assistantId: z.string().optional(),
       // apiEndpoint: z.string().optional(),
       authenticationMethod: z.string().optional(),
-      apiKey: keysRequired
-        ? z.string().min(1, "API key is required")
-        : z.string().optional(),
+      apiKey: z.string().optional(),
       observabilityEnabled: z.boolean().default(false),
       username: z.string().optional(),
       password: z.string().optional(),
@@ -109,7 +113,13 @@ export const createAgentDefinitionSchema = (options) => {
       knowledgeBase: z.string().optional(),
       countryCode: z.string().optional(),
       contactNumber: z.string().optional(),
+      // Form-only: chooses how the test call reaches the agent. Never sent to
+      // the backend, which derives the mode from contact_number.
+      voiceTransport: z
+        .enum([VOICE_TRANSPORT.WEBRTC, VOICE_TRANSPORT.TELEPHONY])
+        .default(VOICE_TRANSPORT.WEBRTC),
       inbound: z.boolean(),
+      targetSpeaksFirst: z.boolean().optional().default(false),
       commitMessage: z.string().min(1, "Commit message is required"),
       model: z.string().optional(),
       modelDetails: z.any().optional().nullable(),
@@ -132,49 +142,50 @@ export const createAgentDefinitionSchema = (options) => {
         .nullable(),
     })
     .superRefine(async (data, ctx) => {
+      // LiveKit authenticates with livekit_api_key/secret and has no Assistant
+      // ID, so it is exempt from the provider-key requirement.
+      if (keysRequired && !isLiveKitProvider(data.provider)) {
+        if (!data.assistantId) {
+          ctx.addIssue({
+            path: ["assistantId"],
+            message: "Assistant ID is required",
+            code: z.ZodIssueCode.custom,
+          });
+        }
+        if (!data.apiKey) {
+          ctx.addIssue({
+            path: ["apiKey"],
+            message: "API key is required",
+            code: z.ZodIssueCode.custom,
+          });
+        }
+      }
+
+      // The transport toggle decides whether a phone number is collected at
+      // all. In webrtc mode the number is cleared on submit, so anything left
+      // in the field is ignored rather than validated.
       if (
         data.agentType === AGENT_TYPES.VOICE &&
-        !isLiveKitProvider(data.provider)
+        !isLiveKitProvider(data.provider) &&
+        data.voiceTransport === VOICE_TRANSPORT.TELEPHONY
       ) {
-        // Phone number is optional when API key + assistant ID are provided (web bridge)
-        // const hasWebBridgeCreds =
-        //   data.apiKey?.trim() && data.assistantId?.trim();
         const hasCountryCode = !!data.countryCode?.trim();
         const hasContactNumber = !!data.contactNumber?.trim();
-        // if (!hasWebBridgeCreds) {
         if (!hasCountryCode) {
           ctx.addIssue({
             path: ["countryCode"],
-            message: "Country code is required",
+            message: "Country code is required for a phone simulation",
             code: z.ZodIssueCode.custom,
           });
         }
         if (!hasContactNumber) {
           ctx.addIssue({
             path: ["contactNumber"],
-            message: "Contact number is required",
+            message: "Contact number is required for a phone simulation",
             code: z.ZodIssueCode.custom,
           });
         }
-        // } else {
-        // Both are optional, but if one is provided the other is required
-        if (hasContactNumber && !hasCountryCode) {
-          ctx.addIssue({
-            path: ["countryCode"],
-            message: "Country code is required when contact number is provided",
-            code: z.ZodIssueCode.custom,
-          });
-        }
-        if (hasCountryCode && !hasContactNumber) {
-          ctx.addIssue({
-            path: ["contactNumber"],
-            message: "Contact number is required when country code is provided",
-            code: z.ZodIssueCode.custom,
-          });
-        }
-        // }
         if (hasContactNumber) {
-          // Validate contact number format only if it's provided
           const trimmedNumber = data.contactNumber.trim();
           if (!/^\d+$/.test(trimmedNumber)) {
             ctx.addIssue({
@@ -352,6 +363,7 @@ export const defaultAgentDefinitionValues = {
   countryCode: "",
   contactNumber: "",
   inbound: true,
+  targetSpeaksFirst: false,
   commitMessage: "",
   observabilityEnabled: false,
   token: "",
@@ -363,7 +375,7 @@ export const defaultAgentDefinitionValues = {
   livekitApiSecret: "",
   livekitAgentName: "",
   livekitConfigJson: "",
-  livekitMaxConcurrency: 2,
+  livekitMaxConcurrency: 5,
   _livekitCredentialsValid: false,
 };
 
@@ -385,6 +397,39 @@ export const generateEvalColumnsFromConfig = (items = []) => {
     const displayName = item.name?.replace(/_/g, " ") || evalId;
     const isReason = item.source_field === "reason";
     const dataKey = isReason ? item.parent_eval_id : evalId;
+
+    // CHOICES evals render one column per choice (id `${configId}**${choice}`)
+    // carrying the per-choice percentage as a FLAT row key — the same contract
+    // list_traces_of_session uses. Nested `eval_outputs` is keyed by config id
+    // and never matches a per-choice column id, so read the flat key directly.
+    if (evalId.includes("**")) {
+      return {
+        headerName: displayName,
+        field: evalId,
+        flex: 1,
+        minWidth: 140,
+        hide: item.is_visible === false,
+        headerComponent: CallLogsHeaderCellRenderer,
+        headerComponentParams: { displayName },
+        valueGetter: (params) => {
+          const v = params.data?.[evalId];
+          return v === null || v === undefined || v === "" ? null : Number(v);
+        },
+        // Reuse the trace list's eval cell for identical rendering (percentage
+        // + interpolated background). The per-choice value is numeric, so it
+        // takes the numeric-percentage path.
+        cellRenderer: (params) => (
+          <EvaluationCell
+            value={params.value}
+            column={{
+              outputType: item.output_type,
+              reverseOutput: item.reverse_output,
+            }}
+          />
+        ),
+      };
+    }
+
     return {
       headerName: displayName,
       field: `eval_outputs.${evalId}`,
@@ -413,11 +458,19 @@ export const generateEvalColumnsFromConfig = (items = []) => {
             </Box>
           );
         }
+        // PASS_FAIL carries a numeric pass rate — route it through the score
+        // (percentage) renderer so it shows "X%" instead of the pill path,
+        // which string-matches "fail" and would render 0% as a false "Pass".
+        const rawType = evalData?.output_type;
+        const isPassFail =
+          String(rawType || "")
+            .toLowerCase()
+            .replace(/[/ ]/g, "_") === "pass_fail";
         return (
           <EvalCellRenderer
             value={{
               ...evalData,
-              type: evalData?.output_type,
+              type: isPassFail ? "percentage" : rawType,
               value: evalData.output,
             }}
           />

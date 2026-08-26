@@ -77,6 +77,7 @@ export const normalizeDatasetOptimizationRun = (run = {}) => ({
   startedAt: run.startedAt ?? run.started_at,
   optimizerAlgorithm: run.optimizerAlgorithm ?? run.optimizer_algorithm,
   optimizerModelId: run.optimizerModelId ?? run.optimizer_model_id,
+  modelDeprecated: run.modelDeprecated ?? run.model_deprecated ?? false,
   optimizerConfig: run.optimizerConfig ?? run.optimizer_config,
   columnId: run.columnId ?? run.column_id,
 });
@@ -95,6 +96,8 @@ export const normalizeDatasetOptimizationDetail = (optimization = {}) => ({
   columnConfig: optimization.columnConfig ?? optimization.column_config,
   optimizerModelId:
     optimization.optimizerModelId ?? optimization.optimizer_model_id,
+  modelDeprecated:
+    optimization.modelDeprecated ?? optimization.model_deprecated ?? false,
   userEvalTemplates:
     optimization.userEvalTemplates ?? optimization.user_eval_templates,
 });
@@ -319,8 +322,8 @@ export const getTrialsColumnConfig = (columnConfig) => {
           colId: "trial",
           valueGetter: (params) => ({
             title: params.data?.trial,
-            improvement: params.data?.scorePercentageChange,
-            isBest: params.data?.isBest,
+            improvement: params.data?.score_percentage_change,
+            isBest: params.data?.is_best,
           }),
         };
 
@@ -339,13 +342,13 @@ export const getTrialsColumnConfig = (columnConfig) => {
 
       default:
         return {
-          field: column?.id,
           headerName: column?.name,
           minWidth: 170,
           colId: column?.id,
           cellRenderer: "averageEvalCellRenderer",
           isVisible: true,
           id: column?.id,
+          valueGetter: (params) => params.data?.eval_scores?.[column?.id],
         };
     }
   });

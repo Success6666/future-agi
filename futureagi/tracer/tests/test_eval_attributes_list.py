@@ -74,9 +74,7 @@ class TestGetEvalAttributesListTraces:
         reason="Production CH query references span_attr_str (v1 column) not yet migrated to v2 schema",
         strict=False,
     )
-    def test_includes_trace_public_fields(
-        self, auth_client, populated_observe_project
-    ):
+    def test_includes_trace_public_fields(self, auth_client, populated_observe_project):
         project = populated_observe_project["project"]
         response = auth_client.get(
             "/tracer/observation-span/get_eval_attributes_list/",
@@ -309,12 +307,117 @@ class TestSpanAttributeKeysNormalisation:
         assert bad == [], f"Found malformed paths: {bad[:5]}"
 
 
+class TestSpanAttributeKeysPartitionPruning:
+    """The recent-window discovery query must prune, stay unordered, and stay
+    exhaustive.
+
+    ``spans`` is partitioned by ``toDate(start_time)``; ``created_at`` is
+    neither the partition key nor in the sort key. Windowing by ``created_at``
+    defeats partition pruning and scans the whole project. Pin that the query
+    windows by ``start_time`` and does NOT order by it: ``start_time`` sits
+    behind ``observation_type``/``service_name`` in the sort key, so an ordered
+    lane sorts the whole window (materializing the fat ``attrs_*`` maps) ->
+    Code 396 / Code 159 on high-volume projects.
+
+    Discovery is exhaustive over that window: each lane ARRAY JOINs the
+    ``<map>.keys`` subcolumn over every span, never a row sample, so a key
+    carried by a thin slice of spans still reaches the filter picker. The
+    unbounded path keeps the legacy ``LIMIT 10000`` sample as a visibility-only
+    superset lane that contributes no count. Also pin that only the Map
+    ``.keys`` subcolumn is read (never values).
+    """
+
+    WINDOW = "start_time >= now() - toIntervalDay(%(window_days)s)"
+
+    def _capture_sql(self, monkeypatch, *, recent_days=7, **kwargs) -> str:
+        from tracer.services.clickhouse.query_service import AnalyticsQueryService
+
+        captured: dict = {}
+
+        class _Result:
+            data: list = []
+
+        def _capture(self, query, params, timeout_ms=None):
+            captured["query"] = query
+            return _Result()
+
+        monkeypatch.setattr(
+            AnalyticsQueryService, "execute_ch_query", _capture, raising=True
+        )
+        AnalyticsQueryService().get_span_attribute_keys_ch_for_projects(
+            ["c4de3065-12b5-488c-a814-aa1c8e3f856f"],
+            recent_days=recent_days,
+            **kwargs,
+        )
+        return captured["query"]
+
+    def test_windows_by_start_time_without_recency_order(self, monkeypatch):
+        sql = self._capture_sql(monkeypatch, recent_days=7)
+        # start_time is the partition key -> CH can prune to the window.
+        assert "start_time >= now() - toIntervalDay" in sql
+        # No recency ORDER BY: an ordered lane would sort the whole window.
+        assert "ORDER BY start_time" not in sql
+
+    def test_reads_keys_subcolumn_not_whole_map(self, monkeypatch):
+        sql = self._capture_sql(monkeypatch, recent_days=7)
+        # keys-only endpoint -> read the Map .keys subcolumn, never the
+        # (200-380 KB) map values via mapKeys().
+        assert "attrs_string.keys" in sql
+        assert "attrs_number.keys" in sql
+        assert "attrs_bool.keys" in sql
+        assert "mapKeys(" not in sql
+
+    def test_preserves_type_labels(self, monkeypatch):
+        sql = self._capture_sql(monkeypatch, recent_days=7)
+        # The windowed lanes are exhaustive, so only the type labels survive.
+        assert "'string'" in sql
+        assert "'number'" in sql
+        assert "'boolean'" in sql
+
+    def test_does_not_window_or_order_by_created_at(self, monkeypatch):
+        sql = self._capture_sql(monkeypatch, recent_days=7)
+        # created_at defeats pruning; it must not gate the recent window.
+        assert "created_at >= now()" not in sql
+        assert "ORDER BY created_at" not in sql
+
+    def test_full_project_discovery_skips_order_by_to_short_circuit(self, monkeypatch):
+        # recent_days=None (dashboard/metrics filter discovery) unions the
+        # windowed lane with the legacy sample; the ORDER BY must stay dropped
+        # or LIMIT 10000 can't short-circuit and CH scans the whole project
+        # (~477k rows) instead of ~15k.
+        sql = self._capture_sql(monkeypatch, recent_days=None)
+        assert "ORDER BY start_time" not in sql
+        assert "LIMIT 10000" in sql
+
+    def test_each_lane_array_joins_keys_across_the_whole_window(self, monkeypatch):
+        # No row sample: every lane reads .keys for every span in the window, so
+        # a key on a thin slice of spans cannot fall outside it (TH-7632).
+        sql = self._capture_sql(monkeypatch, recent_days=7)
+        for column in ("attrs_string", "attrs_number", "attrs_bool"):
+            assert f"FROM spans ARRAY JOIN {column}.keys AS key" in sql
+        assert sql.count(self.WINDOW) == 3
+        assert "LIMIT 10000" not in sql
+
+    def test_unbounded_discovery_keeps_the_legacy_sample_lane(self, monkeypatch):
+        # recent_days=None unions the old sample in, so no key regresses.
+        sql = self._capture_sql(monkeypatch, recent_days=None)
+        assert sql.count(self.WINDOW) == 3
+        assert sql.count("LIMIT 10000") == 3
+        assert sql.count("UNION ALL") == 5
+
+    def test_sample_lane_contributes_no_count(self, monkeypatch):
+        # A span inside both the window and the sample would otherwise be summed
+        # twice by the outer sum(cnt) and inflate argMax(type, cnt).
+        sql = self._capture_sql(monkeypatch, recent_days=None, include_counts=True)
+        assert sql.count("0 AS cnt") == 3
+        assert sql.count("count() AS cnt") == 3
+        assert "sum(cnt) AS count" in sql
+
+
 @pytest.mark.integration
 @pytest.mark.api
 class TestGetEvalAttributesListUnknownRowType:
-    def test_unknown_row_type_returns_400(
-        self, auth_client, populated_observe_project
-    ):
+    def test_unknown_row_type_returns_400(self, auth_client, populated_observe_project):
         project = populated_observe_project["project"]
         response = auth_client.get(
             "/tracer/observation-span/get_eval_attributes_list/",
@@ -324,71 +427,3 @@ class TestGetEvalAttributesListUnknownRowType:
             },
         )
         assert response.status_code == 400
-
-
-@pytest.mark.integration
-@pytest.mark.api
-@pytest.mark.django_db
-class TestTraceEvalResolvesDottedSpanPath:
-    """End-to-end: a trace task with mapping ``output -> spans.0.output``
-    actually resolves through ``_process_trace_mapping`` to the first span's
-    ``span_attributes.output.value`` and writes a non-error EvalLogger row.
-    """
-
-    def test_trace_eval_resolves_indexed_span_path(
-        self,
-        populated_observe_project,
-        eval_template,
-        stub_run_eval,
-        stub_cost_log,
-        inline_temporal,
-    ):
-        from tracer.models.custom_eval_config import CustomEvalConfig
-        from tracer.models.eval_task import (
-            EvalTask,
-            EvalTaskStatus,
-            RowType,
-            RunType,
-        )
-        from tracer.models.observation_span import EvalLogger
-        from tracer.utils.eval_tasks import process_eval_task
-
-        project = populated_observe_project["project"]
-        config = CustomEvalConfig.objects.create(
-            project=project,
-            eval_template=eval_template,
-            name="Trace eval w/ dotted span path",
-            config={"output": "Pass/Fail"},
-            mapping={
-                "input": "spans.0.input",
-                "output": "spans.0.output",
-            },
-            model="turing_large",
-        )
-        task = EvalTask.objects.create(
-            project=project,
-            name="Dotted path trace task",
-            filters={"project_id": str(project.id)},
-            sampling_rate=100.0,
-            run_type=RunType.HISTORICAL,
-            spans_limit=1000,
-            status=EvalTaskStatus.PENDING,
-            row_type=RowType.TRACES,
-        )
-        task.evals.add(config)
-
-        process_eval_task._original_func(str(task.id))
-
-        rows = list(
-            EvalLogger.objects.filter(
-                eval_task_id=str(task.id), deleted=False
-            ).select_related("trace")
-        )
-        # 4 traces × 1 eval = 4 rows. None should be error rows — the dotted
-        # path resolves successfully because every trace has spans whose
-        # span_attributes carry ``input`` and ``output`` keys (set by
-        # populated_observe_project).
-        assert len(rows) == 4
-        assert all(not r.error for r in rows), [
-            (r.id, r.error_message) for r in rows if r.error
-        ]

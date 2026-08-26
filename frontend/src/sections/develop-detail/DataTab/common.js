@@ -320,14 +320,10 @@ export const getColumnConfig = ({
   const editCell = useEditCellStore.getState().editCell;
   const setEditCell = useEditCellStore.getState().setEditCell;
 
-  // Read both snake_case (canonical API shape) and camelCase (alias) so
-  // this function works whether `eachCol` came straight from the axios
-  // response (has non-enumerable camelCase getters) or from a spread/clone
-  // (only snake_case keys survive).
-  const colDataType = eachCol?.data_type ?? eachCol?.dataType;
-  const colOriginType = eachCol?.origin_type ?? eachCol?.originType;
-  const colIsFrozen = eachCol?.is_frozen ?? eachCol?.isFrozen;
-  const colIsVisible = eachCol?.is_visible ?? eachCol?.isVisible;
+  const colDataType = eachCol?.data_type;
+  const colOriginType = eachCol?.origin_type;
+  const colIsFrozen = eachCol?.is_frozen;
+  const colIsVisible = eachCol?.is_visible;
 
   const isEditable =
     !isViewerRole &&
@@ -339,7 +335,7 @@ export const getColumnConfig = ({
     headerName: eachCol?.name,
     valueGetter: (v) => {
       const cell = v?.data?.[eachCol?.id];
-      const rawValue = cell?.cell_value ?? cell?.cellValue;
+      const rawValue = cell?.cell_value;
       return parseCellValue(rawValue, AGGridCellDataType[colDataType]);
     },
     valueSetter: (params) => {
@@ -421,7 +417,7 @@ export const getColumnConfig = ({
       ...baseConfig,
       valueGetter: (v) => {
         const cell = v.data?.[eachCol.id];
-        const rawValue = cell?.cell_value ?? cell?.cellValue;
+        const rawValue = cell?.cell_value;
         const date = parseDate(rawValue);
         return date;
       },
@@ -526,7 +522,7 @@ const getMainMenuItems =
       // use the underlying eval / eval_reason column ids, so the old
       // `column.id` key no longer matched what was stored and the
       // "Hide Reasoning" state was lost.
-      const key = column?.sourceId || column?.id;
+      const key = column?.source_id || column?.id;
       extraMenuItems.push({
         name: showSummary.includes(key) ? "Hide Reasoning" : "Show Reasoning",
         action: () => {
@@ -820,6 +816,10 @@ export const normalizeEvalCellValue = (value) => {
 export const cleanChoiceLabel = (value) => {
   const parsed = parsePythonReprIfNeeded(value);
   if (Array.isArray(parsed)) return parsed.map((v) => String(v)).join(", ");
+  // Scored choices evals emit {score, choice} / {score, choices} as the bucket
+  // key, which would otherwise stringify to "[object Object]".
+  const choiceLabel = extractChoiceLabel(parsed);
+  if (choiceLabel !== null) return choiceLabel;
   return String(parsed ?? value);
 };
 
@@ -906,9 +906,14 @@ export const normalizeEvalResult = (value, outputType) => {
       items = [v];
     }
     items = items
-      .map((/** @type {any} */ x) =>
-        x && typeof x === "object" ? x.choice ?? x.label ?? x.value ?? "" : x,
-      )
+      .flatMap((x) => {
+        if (!x || typeof x !== "object") return [x];
+        return (
+          extractChoiceArray(x) ?? [
+            extractChoiceLabel(x) ?? x.label ?? x.value ?? "",
+          ]
+        );
+      })
       .map((/** @type {any} */ x) => String(x ?? ""))
       .filter(Boolean);
     if (items.length === 0) return { kind: "empty" };
@@ -968,21 +973,19 @@ export const DATASET_TYPES = {
 export const enhanceCol = (col, averageMetaData) => {
   const columnConfig = averageMetaData?.find((d) => d.id === col.id);
   if (!columnConfig) return col;
-  // Local table column state still reads a few camelCase fields. Keep this
-  // adapter explicit here instead of mutating every API response globally.
   return {
     ...col,
     metadata: columnConfig?.metadata,
-    data_type: col?.data_type ?? col?.dataType,
-    dataType: col?.data_type ?? col?.dataType,
-    origin_type: col?.origin_type ?? col?.originType,
-    originType: col?.origin_type ?? col?.originType,
-    is_frozen: col?.is_frozen ?? col?.isFrozen,
-    isFrozen: col?.is_frozen ?? col?.isFrozen,
-    is_visible: col?.is_visible ?? col?.isVisible,
-    isVisible: col?.is_visible ?? col?.isVisible,
-    source_id: col?.source_id ?? col?.sourceId,
-    sourceId: col?.source_id ?? col?.sourceId,
+    data_type: col?.data_type,
+    dataType: col?.data_type,
+    origin_type: col?.origin_type,
+    originType: col?.origin_type,
+    is_frozen: col?.is_frozen,
+    isFrozen: col?.is_frozen,
+    is_visible: col?.is_visible,
+    isVisible: col?.is_visible,
+    source_id: col?.source_id,
+    sourceId: col?.source_id,
   };
 };
 

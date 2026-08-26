@@ -591,6 +591,9 @@ export const endpoints = {
       deploymentInfo: apiPath("/api/deployment-info/"),
     },
   },
+  ossSetup: {
+    setupChecks: apiPath("/api/setup-checks/"),
+  },
   tools: {
     create: apiPath("/model-hub/tools/"),
     update: (id) => apiPath("/model-hub/tools/{id}/", { id: id }),
@@ -1303,6 +1306,8 @@ export const endpoints = {
       `${apiPath("/tracer/observation-span/get_trace_id_by_index_spans_as_observe/")}?project_id=${observeId}`,
     addAnnotationValuesForSpan: () =>
       apiPath("/tracer/observation-span/add_annotations/"),
+    submitObservationSpanFeedbackActionType: () =>
+      apiPath("/tracer/observation-span/submit_feedback_action_type/"),
     getObservationSpan: (id) =>
       apiPath("/tracer/observation-span/{id}/", { id }),
     getObservationSpanLoading: (id) =>
@@ -1500,6 +1505,9 @@ export const endpoints = {
   runTests: {
     list: apiPath("/simulate/run-tests/"),
     create: apiPath("/simulate/run-tests/create/"),
+    validateLiveKitCredentials: apiPath(
+      "/simulate/api/livekit/validate-credentials/",
+    ),
     detail: (id) =>
       apiPath("/simulate/run-tests/{run_test_id}/", { run_test_id: id }),
     detailExecutions: (id) =>

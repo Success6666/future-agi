@@ -19,7 +19,10 @@ import { getSessionListColumnDef } from "./common";
 import { Events, trackEvent } from "src/utils/Mixpanel";
 import { useUrlState } from "src/routes/hooks/use-url-state";
 import { userTraceRowHeightMapping } from "../UsersView/common";
-import { normalizeConfigKeys } from "src/sections/projects/LLMTracing/common";
+import {
+  normalizeConfigKeys,
+  toBackendFilters,
+} from "src/sections/projects/LLMTracing/common";
 import { useSessionsGridStoreShallow } from "./ReplaySessions/store";
 import { APP_CONSTANTS } from "src/utils/constants";
 
@@ -37,7 +40,7 @@ const getSessionGridThemeParams = (theme) => ({
   rowHoverColor: "rgba(120,87,252,0.04)",
 });
 
-const DATASET_ROWS_LIMIT = 30;
+const DATASET_ROWS_LIMIT = 25;
 
 const LoadingHeader = () => {
   return <Skeleton variant="text" width={100} height={20} />;
@@ -56,7 +59,9 @@ const SessionGrid = React.forwardRef(
       className,
       onGridReady,
       pendingCustomColumnsRef,
+      canonicalOrderRef,
       isOnSavedView = false,
+      onUserReorder,
       userIdForUserMode,
     },
     gridApiRef,
@@ -144,7 +149,9 @@ const SessionGrid = React.forwardRef(
       const bottomRowObj = {};
 
       for (const eachCol of columns) {
-        if (eachCol?.groupBy) {
+        // Bucket each custom col alone so it stays flat in its store position
+        // (a shared bucket collapsed them together and oscillated the order).
+        if (eachCol?.groupBy && eachCol.groupBy !== "Custom Columns") {
           if (!grouping[eachCol?.groupBy]) {
             grouping[eachCol?.groupBy] = [eachCol];
           } else {
@@ -167,17 +174,17 @@ const SessionGrid = React.forwardRef(
             const c = cols[0];
             bottomRowObj[c?.id] = c?.average ? `${c?.average}` : null;
             return getSessionListColumnDef(c);
-          } else {
-            return {
-              headerName: group,
-              children: cols.map((c) => {
-                bottomRowObj[c?.id] = c?.average
-                  ? `Average ${c?.average}`
-                  : null;
-                return getSessionListColumnDef(c);
-              }),
-            };
           }
+          // marryChildren + groupId keep the group movable across rebuilds.
+          return {
+            headerName: group,
+            groupId: group,
+            marryChildren: true,
+            children: cols.map((c) => {
+              bottomRowObj[c?.id] = c?.average ? `Average ${c?.average}` : null;
+              return getSessionListColumnDef(c);
+            }),
+          };
         },
       );
 
@@ -225,23 +232,27 @@ const SessionGrid = React.forwardRef(
                     direction: sort,
                   })),
                 ),
-                filters: JSON.stringify(filters),
+                filters: JSON.stringify(toBackendFilters(filters)),
                 ...(dateInterval && { interval: dateInterval }),
               });
 
-              // Use prefetched data if available, otherwise fetch
+              // Await the in-flight prefetch promise if present, else fetch —
+              // dedupes a concurrent getRows for the same page.
               const cached = prefetchCache.current.get(pageNumber);
               prefetchCache.current.delete(pageNumber);
-              const results =
-                cached ||
-                (await axios.get(endpoints.project.projectSessionList(), {
-                  params: buildParams(pageNumber),
-                }));
+              const results = cached
+                ? await cached
+                : await axios.get(endpoints.project.projectSessionList(), {
+                    params: buildParams(pageNumber),
+                  });
               const res = results?.data?.result;
               const newCols = normalizeConfigKeys(res?.config);
 
               // Merge: preserve custom columns that the backend doesn't know about
               if (newCols) {
+                // Canonical order, to restore default when leaving a saved view.
+                if (canonicalOrderRef)
+                  canonicalOrderRef.current = newCols.map((c) => c.id);
                 const currentNonCustom = (columnsRef.current || []).filter(
                   (c) => c.groupBy !== "Custom Columns",
                 );
@@ -327,16 +338,17 @@ const SessionGrid = React.forwardRef(
                 rowCount: lastRow,
               });
 
-              // Prefetch next page so scroll feels instant
+              // Prefetch next page so scroll feels instant. Cache the promise
+              // (not the resolved value) so a concurrent getRows dedupes.
               if (!isLastPage) {
-                axios
-                  .get(endpoints.project.projectSessionList(), {
-                    params: buildParams(pageNumber + 1),
-                  })
-                  .then((res) => {
-                    prefetchCache.current.set(pageNumber + 1, res);
-                  })
-                  .catch(() => {});
+                const prefetch = axios.get(
+                  endpoints.project.projectSessionList(),
+                  { params: buildParams(pageNumber + 1) },
+                );
+                prefetchCache.current.set(pageNumber + 1, prefetch);
+                prefetch.catch(() => {
+                  prefetchCache.current.delete(pageNumber + 1);
+                });
               }
             } catch (error) {
               const message =
@@ -391,6 +403,8 @@ const SessionGrid = React.forwardRef(
     const onColumnMoved = useCallback(
       (params) => {
         if (!params.finished) return;
+        // User drags only; programmatic moves would loop with the order re-apply.
+        if (params.source !== "uiColumnMoved") return;
 
         const newOrder = params.api
           .getColumnState()
@@ -408,9 +422,12 @@ const SessionGrid = React.forwardRef(
         const changed =
           next.length !== columns.length ||
           next.some((c, i) => c.id !== columns[i]?.id);
-        if (changed) setColumns(next);
+        if (changed) {
+          onUserReorder?.();
+          setColumns(next);
+        }
       },
-      [columns, setColumns],
+      [columns, setColumns, onUserReorder],
     );
 
     const onRowClicked = (event) => {
@@ -463,7 +480,7 @@ const SessionGrid = React.forwardRef(
                 pagination={false}
                 cacheBlockSize={DATASET_ROWS_LIMIT}
                 maxBlocksInCache={5}
-                rowBuffer={10}
+                rowBuffer={5}
                 suppressServerSideFullWidthLoadingRow={true}
                 serverSideInitialRowCount={DATASET_ROWS_LIMIT}
                 defaultColDef={defaultColDef}
@@ -508,6 +525,7 @@ SessionGrid.propTypes = {
   updateObj: PropTypes.objectOf(PropTypes.bool).isRequired,
   columns: PropTypes.array,
   setColumns: PropTypes.func,
+  onUserReorder: PropTypes.func,
   filters: PropTypes.array,
   onGridReady: PropTypes.func,
   projectId: PropTypes.string,
@@ -515,6 +533,7 @@ SessionGrid.propTypes = {
   onSelectionChanged: PropTypes.func,
   className: PropTypes.string,
   pendingCustomColumnsRef: PropTypes.object,
+  canonicalOrderRef: PropTypes.object,
   isOnSavedView: PropTypes.bool,
   userIdForUserMode: PropTypes.string,
 };

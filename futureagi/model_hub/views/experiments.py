@@ -506,6 +506,7 @@ class ExperimentsTableView(APIView):
             **MODEL_HUB_ERROR_RESPONSES,
         },
         reject_unknown_fields=True,
+        serializer_context=lambda request: {"request": request},
     )
     def post(self, request):
         try:
@@ -558,6 +559,7 @@ class ExperimentsTableView(APIView):
             **MODEL_HUB_ERROR_RESPONSES,
         },
         reject_unknown_fields=True,
+        serializer_context=lambda request: {"request": request},
     )
     def put(self, request):
         try:
@@ -3396,6 +3398,9 @@ class AddExperimentEvalView(APIView):
                     multi_choice=template.multi_choice,
                     organization=organization,
                     owner=OwnerChoices.USER.value,
+                    output_type_normalized=template.output_type_normalized,
+                    choice_scores=template.choice_scores,
+                    pass_threshold=template.pass_threshold,
                 )
                 new_config = template.config
                 runtime_config = normalize_eval_runtime_config(
@@ -5213,10 +5218,7 @@ class ExperimentListV2APIView(generics.ListAPIView):
 
     def get_queryset(self):
         return (
-            ExperimentsTable.objects.filter(
-                dataset__organization=self.request.user.organization,
-                deleted=False,
-            )
+            _scoped_experiment_queryset(self.request)
             .select_related("dataset")
             .prefetch_related("user_eval_template_ids")
             .annotate(

@@ -640,9 +640,21 @@ export interface InviteCreateApi {
   workspace_access?: WorkspaceAccessInputApi[];
 }
 
+/**
+ * Accept-invite links for the invites just created. Present on OSS deployments only, where SMTP may not be configured; omitted on Cloud/EE.
+ */
+export interface InviteLinkApi {
+  /** @minLength 1 */
+  email: string;
+  /** @minLength 1 */
+  invite_link: string;
+}
+
 export interface InviteCreateResultApi {
   invited: string[];
   already_members?: string[];
+  /** Accept-invite links for the invites just created. Present on OSS deployments only, where SMTP may not be configured; omitted on Cloud/EE. */
+  invites?: InviteLinkApi[];
 }
 
 export interface InviteCreateResponseApi {
@@ -714,6 +726,11 @@ export interface MemberListItemApi {
   created_at: string;
   type: MemberListItemApiType;
   auto_access?: boolean;
+  /**
+     * Accept-invite link for a pending invite. Present on OSS deployments only, where SMTP may not be configured; omitted on Cloud/EE and on active-member rows.
+     * @minLength 1
+     */
+  invite_link?: string;
 }
 
 export interface MemberListResultApi {
@@ -978,6 +995,21 @@ export interface PasswordResetInitiateRequestApi {
   email: string;
 }
 
+export interface PasswordResetInitiateResultApi {
+  /** @minLength 1 */
+  message: string;
+  /**
+     * Password-reset link, returned on OSS deployments only, where SMTP is usually not configured and the emailed link would never arrive. Never present on Cloud/EE, and never present for an email with no matching account. Treat as a credential: anyone holding it can set that account's password.
+     * @minLength 1
+     */
+  reset_link?: string;
+}
+
+export interface PasswordResetInitiateResponseApi {
+  status: boolean;
+  result: PasswordResetInitiateResultApi;
+}
+
 export type RedisKeyRequestApiValue = { [key: string]: unknown };
 
 export interface RedisKeyRequestApi {
@@ -1026,6 +1058,21 @@ export interface SignupRequestApi {
   password?: string;
   allow_email?: boolean;
   recaptcha_response?: string;
+}
+
+export interface SignupResultApi {
+  /** @minLength 1 */
+  message?: string;
+  /** @minLength 1 */
+  access?: string;
+  /** @minLength 1 */
+  refresh?: string;
+  new_org?: boolean;
+}
+
+export interface SignupResponseApi {
+  status: boolean;
+  result: SignupResultApi;
 }
 
 export interface TeamWorkspaceSummaryApi {
@@ -1498,6 +1545,11 @@ export interface WorkspaceMemberRowApi {
   created_at: string;
   type: WorkspaceMemberRowApiType;
   auto_access?: boolean;
+  /**
+     * Accept-invite link for a pending invite. Present on OSS deployments only, where SMTP may not be configured; omitted on Cloud/EE, on active-member rows, and on Admin+ invites when the caller is only a workspace admin.
+     * @minLength 1
+     */
+  invite_link?: string;
 }
 
 export interface WorkspaceMemberListResultApi {
@@ -1970,9 +2022,9 @@ export interface MessageApi {
 }
 
 /**
- * LLM output format: 'text' (plain text), 'json' (free-form JSON), 'json_schema' (structured with schema), UUID string (saved schema reference), or object with 'id' field (prompt playground format). See class docstring for details.
+ * String or JSON object.
  */
-export type PromptTemplateDataApiResponseFormat = { [key: string]: unknown };
+export type PromptTemplateDataApiResponseFormat = string | { [key: string]: unknown };
 
 /**
  * JSON Schema (Draft 7) for structured outputs. Required when response_format='json_schema'. Example: {'type': 'object', 'properties': {...}, 'required': [...]}
@@ -1994,7 +2046,7 @@ export interface PromptTemplateDataApi {
   prompt_version_id?: string;
   /** Array of message objects with id, role, and content array */
   messages: MessageApi[];
-  /** LLM output format: 'text' (plain text), 'json' (free-form JSON), 'json_schema' (structured with schema), UUID string (saved schema reference), or object with 'id' field (prompt playground format). See class docstring for details. */
+  /** String or JSON object. */
   response_format?: PromptTemplateDataApiResponseFormat;
   /** JSON Schema (Draft 7) for structured outputs. Required when response_format='json_schema'. Example: {'type': 'object', 'properties': {...}, 'required': [...]} */
   response_schema?: PromptTemplateDataApiResponseSchema;
@@ -3619,6 +3671,113 @@ export interface ApiTextErrorResponseApi {
   details?: ApiTextErrorResponseApiDetails;
 }
 
+export type CapabilitiesResponseApiDeploymentFlavor = typeof CapabilitiesResponseApiDeploymentFlavor[keyof typeof CapabilitiesResponseApiDeploymentFlavor];
+
+
+export const CapabilitiesResponseApiDeploymentFlavor = {
+  oss_image: 'oss_image',
+  self_hosted_ee_image: 'self_hosted_ee_image',
+  cloud_image: 'cloud_image',
+} as const;
+
+export type CapabilitiesResponseApiDisplayMode = typeof CapabilitiesResponseApiDisplayMode[keyof typeof CapabilitiesResponseApiDisplayMode];
+
+
+export const CapabilitiesResponseApiDisplayMode = {
+  oss: 'oss',
+  oss_locked: 'oss_locked',
+  enterprise: 'enterprise',
+  cloud: 'cloud',
+} as const;
+
+export type CapabilitiesResponseApiLicenseState = typeof CapabilitiesResponseApiLicenseState[keyof typeof CapabilitiesResponseApiLicenseState];
+
+
+export const CapabilitiesResponseApiLicenseState = {
+  not_applicable: 'not_applicable',
+  missing: 'missing',
+  invalid: 'invalid',
+  active: 'active',
+  grace: 'grace',
+  expired: 'expired',
+  trial_active: 'trial_active',
+  trial_expired: 'trial_expired',
+} as const;
+
+export type CapabilityFeatureApiReasonCode = typeof CapabilityFeatureApiReasonCode[keyof typeof CapabilityFeatureApiReasonCode];
+
+
+export const CapabilityFeatureApiReasonCode = {
+  FEATURE_UNKNOWN: 'FEATURE_UNKNOWN',
+  LICENSE_MISSING: 'LICENSE_MISSING',
+  LICENSE_INVALID: 'LICENSE_INVALID',
+  LICENSE_EXPIRED: 'LICENSE_EXPIRED',
+  LICENSE_TRIAL_EXPIRED: 'LICENSE_TRIAL_EXPIRED',
+  LICENSE_FEATURE_MISSING: 'LICENSE_FEATURE_MISSING',
+  FEATURE_NOT_IN_GRACE: 'FEATURE_NOT_IN_GRACE',
+  EE_CODE_UNAVAILABLE: 'EE_CODE_UNAVAILABLE',
+  RESOLVER_UNAVAILABLE: 'RESOLVER_UNAVAILABLE',
+  QUOTA_EXCEEDED: 'QUOTA_EXCEEDED',
+  SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+  NETWORK_REQUIRED: 'NETWORK_REQUIRED',
+  USAGE_LIMIT_REACHED: 'USAGE_LIMIT_REACHED',
+  PLAN_FEATURE_MISSING: 'PLAN_FEATURE_MISSING',
+  LICENSE_VERSION_UNSUPPORTED: 'LICENSE_VERSION_UNSUPPORTED',
+} as const;
+
+export interface CapabilityFeatureApi {
+  /** @minLength 1 */
+  display_name: string;
+  allowed: boolean;
+  reason_code: CapabilityFeatureApiReasonCode;
+  requires_network: boolean;
+  oss_baseline: boolean;
+}
+
+export type CapabilitiesResponseApiFeatures = {[key: string]: CapabilityFeatureApi};
+
+export type LicenseDetailsApiLicenseType = typeof LicenseDetailsApiLicenseType[keyof typeof LicenseDetailsApiLicenseType];
+
+
+export const LicenseDetailsApiLicenseType = {
+  production: 'production',
+  trial: 'trial',
+} as const;
+
+export type LicenseDetailsApiState = typeof LicenseDetailsApiState[keyof typeof LicenseDetailsApiState];
+
+
+export const LicenseDetailsApiState = {
+  not_applicable: 'not_applicable',
+  missing: 'missing',
+  invalid: 'invalid',
+  active: 'active',
+  grace: 'grace',
+  expired: 'expired',
+  trial_active: 'trial_active',
+  trial_expired: 'trial_expired',
+} as const;
+
+export interface LicenseDetailsApi {
+  issued_to: string;
+  band: string;
+  license_type: LicenseDetailsApiLicenseType;
+  expires_at: string;
+  grace_ends_at: string;
+  /** @minimum 0 */
+  features_count: number;
+  state: LicenseDetailsApiState;
+}
+
+export interface CapabilitiesResponseApi {
+  deployment_flavor: CapabilitiesResponseApiDeploymentFlavor;
+  display_mode: CapabilitiesResponseApiDisplayMode;
+  license_state: CapabilitiesResponseApiLicenseState;
+  features: CapabilitiesResponseApiFeatures;
+  license?: LicenseDetailsApi;
+  instance_id?: string;
+}
+
 export type DeploymentInfoResultApiMode = typeof DeploymentInfoResultApiMode[keyof typeof DeploymentInfoResultApiMode];
 
 
@@ -3771,6 +3930,53 @@ export interface LangfuseTracesMetaApi {
 export interface LangfuseTracesResponseApi {
   data: LangfuseTracesResponseApiDataItem[];
   meta: LangfuseTracesMetaApi;
+}
+
+export type SetupChecksResultApiStatus = typeof SetupChecksResultApiStatus[keyof typeof SetupChecksResultApiStatus];
+
+
+export const SetupChecksResultApiStatus = {
+  ok: 'ok',
+  issues: 'issues',
+} as const;
+
+export type SetupChecksResultApiMode = typeof SetupChecksResultApiMode[keyof typeof SetupChecksResultApiMode];
+
+
+export const SetupChecksResultApiMode = {
+  live: 'live',
+  experiment: 'experiment',
+} as const;
+
+export type SetupCheckApiStatus = typeof SetupCheckApiStatus[keyof typeof SetupCheckApiStatus];
+
+
+export const SetupCheckApiStatus = {
+  passed: 'passed',
+  warning: 'warning',
+  failed: 'failed',
+  skipped: 'skipped',
+} as const;
+
+export interface SetupCheckApi {
+  /** @minLength 1 */
+  id: string;
+  /** @minLength 1 */
+  label: string;
+  status: SetupCheckApiStatus;
+  required: boolean;
+  detail: string;
+}
+
+export interface SetupChecksResultApi {
+  status: SetupChecksResultApiStatus;
+  mode: SetupChecksResultApiMode;
+  checks: SetupCheckApi[];
+}
+
+export interface SetupChecksResponseApi {
+  status?: boolean;
+  result: SetupChecksResultApi;
 }
 
 export type SpanAttributeDetailResponseApiType = typeof SpanAttributeDetailResponseApiType[keyof typeof SpanAttributeDetailResponseApiType];
@@ -5324,6 +5530,9 @@ export interface AIFilterRequestApi {
   dataset_id?: string;
 }
 
+/**
+ * Any valid JSON value.
+ */
 export type AIFilterConditionApiValue = { [key: string]: unknown };
 
 export interface AIFilterConditionApi {
@@ -5331,6 +5540,7 @@ export interface AIFilterConditionApi {
   field: string;
   /** @minLength 1 */
   operator: string;
+  /** Any valid JSON value. */
   value?: AIFilterConditionApiValue;
 }
 
@@ -5389,7 +5599,7 @@ export interface QueueAnnotatorNestedApi {
   readonly email?: string;
   /** @minLength 1 */
   role?: string;
-  readonly roles?: string;
+  readonly roles?: readonly string[];
 }
 
 export interface AnnotationQueueApi {
@@ -5434,8 +5644,9 @@ export interface AnnotationQueueApi {
   readonly created_by?: string;
   /** @minLength 1 */
   readonly created_by_name?: string;
+  /** @minLength 1 */
   readonly viewer_role?: string;
-  readonly viewer_roles?: string;
+  readonly viewer_roles?: readonly string[];
   readonly deleted?: boolean;
   readonly created_at?: string;
 }
@@ -5922,6 +6133,19 @@ export const QueueItemApiStatus = {
 
 export type QueueItemApiMetadata = { [key: string]: unknown };
 
+/**
+ * Any valid JSON value.
+ */
+export type QueueItemApiSourcePreview = { [key: string]: unknown };
+
+export interface QueueItemAssignedUserApi {
+  id: string;
+  /** @minLength 1 */
+  name: string;
+  /** @minLength 1 */
+  email: string;
+}
+
 export interface QueueItemApi {
   readonly id?: string;
   readonly queue?: string;
@@ -5945,7 +6169,7 @@ export interface QueueItemApi {
   assigned_to?: string;
   /** @minLength 1 */
   readonly assigned_to_name?: string;
-  readonly assigned_users?: string;
+  readonly assigned_users?: readonly QueueItemAssignedUserApi[];
   reserved_by?: string;
   /** @minLength 1 */
   readonly reserved_by_name?: string;
@@ -5957,9 +6181,10 @@ export interface QueueItemApi {
   readonly reviewed_by_name?: string;
   reviewed_at?: string;
   review_notes?: string;
-  readonly source_preview?: string;
-  readonly comment_count?: string;
-  readonly open_feedback_count?: string;
+  /** Any valid JSON value. */
+  readonly source_preview?: QueueItemApiSourcePreview;
+  readonly comment_count?: number;
+  readonly open_feedback_count?: number;
   readonly created_at?: string;
 }
 
@@ -6034,6 +6259,7 @@ export interface SelectionApi {
 export interface AddItemsApi {
   items?: AddQueueItemApi[];
   selection?: SelectionApi;
+  project_id?: string;
 }
 
 export interface QueueAddItemsResultApi {
@@ -6084,6 +6310,49 @@ export interface ApiSelectionTooLargeErrorApi {
   /** @minLength 1 */
   message: string;
   error: ApiSelectionTooLargeDetailApi;
+}
+
+export type ApiTooLargeErrorApiType = typeof ApiTooLargeErrorApiType[keyof typeof ApiTooLargeErrorApiType];
+
+
+export const ApiTooLargeErrorApiType = {
+  validation_error: 'validation_error',
+  authentication_error: 'authentication_error',
+  payment_required: 'payment_required',
+  entitlement_error: 'entitlement_error',
+  permission_error: 'permission_error',
+  not_found: 'not_found',
+  conflict: 'conflict',
+  client_error: 'client_error',
+  rate_limit: 'rate_limit',
+  server_error: 'server_error',
+  service_unavailable: 'service_unavailable',
+  timeout: 'timeout',
+  api_error: 'api_error',
+} as const;
+
+export type ApiTooLargeErrorApiCode = typeof ApiTooLargeErrorApiCode[keyof typeof ApiTooLargeErrorApiCode];
+
+
+export const ApiTooLargeErrorApiCode = {
+  export_too_large: 'export_too_large',
+  items_too_large: 'items_too_large',
+} as const;
+
+export type ApiTooLargeErrorApiDetails = {[key: string]: string[]};
+
+export interface ApiTooLargeErrorApi {
+  status?: boolean;
+  type?: ApiTooLargeErrorApiType;
+  code?: ApiTooLargeErrorApiCode;
+  detail?: string;
+  /** @minLength 1 */
+  result?: string;
+  /** @minLength 1 */
+  message?: string;
+  error?: string;
+  attr?: string;
+  details?: ApiTooLargeErrorApiDetails;
 }
 
 export type AssignItemsApiAction = typeof AssignItemsApiAction[keyof typeof AssignItemsApiAction];
@@ -6934,7 +7203,10 @@ export type ColumnConfigResultApiPromptConfig = { [key: string]: unknown };
 
 export type ColumnConfigResultApiMessages = { [key: string]: unknown };
 
-export type ColumnConfigResultApiResponseFormat = { [key: string]: unknown };
+/**
+ * String or JSON object.
+ */
+export type ColumnConfigResultApiResponseFormat = string | { [key: string]: unknown };
 
 export type ColumnConfigResultApiOptimizedKPrompts = { [key: string]: unknown };
 
@@ -6963,6 +7235,7 @@ export interface ColumnConfigResultApi {
   presence_penalty?: number;
   max_tokens?: number;
   top_p?: number;
+  /** String or JSON object. */
   response_format?: ColumnConfigResultApiResponseFormat;
   tool_choice?: string;
   tools?: string[];
@@ -7261,6 +7534,7 @@ export interface DatasetOptimizationListApi {
   readonly trial_count?: string;
   optimizer_algorithm?: DatasetOptimizationListApiOptimizerAlgorithm;
   readonly optimizer_model_id?: string;
+  readonly model_deprecated?: boolean;
   readonly column_id?: string;
   status?: DatasetOptimizationListApiStatus;
   error_message?: string;
@@ -7303,23 +7577,6 @@ export interface DatasetOptimizationCreateApi {
   readonly created_at?: string;
 }
 
-export type DatasetOptimizationDetailApiOptimizerAlgorithm = typeof DatasetOptimizationDetailApiOptimizerAlgorithm[keyof typeof DatasetOptimizationDetailApiOptimizerAlgorithm];
-
-
-export const DatasetOptimizationDetailApiOptimizerAlgorithm = {
-  random_search: 'random_search',
-  bayesian: 'bayesian',
-  metaprompt: 'metaprompt',
-  protegi: 'protegi',
-  promptwizard: 'promptwizard',
-  gepa: 'gepa',
-} as const;
-
-/**
- * Optimizer-specific configuration (num_trials, etc.)
- */
-export type DatasetOptimizationDetailApiOptimizerConfig = { [key: string]: unknown };
-
 export type DatasetOptimizationDetailApiStatus = typeof DatasetOptimizationDetailApiStatus[keyof typeof DatasetOptimizationDetailApiStatus];
 
 
@@ -7332,72 +7589,87 @@ export const DatasetOptimizationDetailApiStatus = {
   cancelled: 'cancelled',
 } as const;
 
-export type DatasetOptimizationStepApiStatus = typeof DatasetOptimizationStepApiStatus[keyof typeof DatasetOptimizationStepApiStatus];
+export type DatasetOptimizationParameterItemApiValue = { [key: string]: unknown };
 
+export interface DatasetOptimizationParameterItemApi {
+  /** @minLength 1 */
+  key: string;
+  /** @minLength 1 */
+  label: string;
+  description: string;
+  value: DatasetOptimizationParameterItemApiValue;
+}
 
-export const DatasetOptimizationStepApiStatus = {
-  pending: 'pending',
-  running: 'running',
-  completed: 'completed',
-  failed: 'failed',
-} as const;
+export interface DatasetOptimizationTrialEvalScoreApi {
+  score?: number;
+  percentage_change?: number;
+}
 
-export type DatasetOptimizationStepApiMetadata = { [key: string]: unknown };
+export type DatasetOptimizationTrialTableRowApiEvalScores = {[key: string]: DatasetOptimizationTrialEvalScoreApi};
 
-export interface DatasetOptimizationStepApi {
-  readonly id?: string;
-  /**
-     * @minLength 1
-     * @maxLength 255
-     */
+export interface DatasetOptimizationTrialTableRowApi {
+  /** @minLength 1 */
+  id: string;
+  /** @minLength 1 */
+  trial: string;
+  prompt: string;
+  is_best: boolean;
+  score_percentage_change?: number;
+  eval_scores: DatasetOptimizationTrialTableRowApiEvalScores;
+}
+
+export interface DatasetOptimizationColumnConfigItemApi {
+  /** @minLength 1 */
+  id: string;
+  /** @minLength 1 */
   name: string;
-  description?: string;
-  status?: DatasetOptimizationStepApiStatus;
-  metadata?: DatasetOptimizationStepApiMetadata;
-  /**
-     * @minimum -2147483648
-     * @maximum 2147483647
-     */
-  step_number: number;
-  readonly created_at?: string;
-  readonly updated_at?: string;
+  is_visible: boolean;
 }
 
-export interface DatasetOptimizationTrialListApi {
-  readonly id?: string;
-  /**
-     * @minimum -2147483648
-     * @maximum 2147483647
-     */
-  trial_number: number;
-  is_baseline?: boolean;
-  average_score: number;
-  readonly created_at?: string;
+export interface DatasetOptimizationEvalTemplateItemApi {
+  /** @minLength 1 */
+  id: string;
+  /** @minLength 1 */
+  eval_id: string;
+  /** @minLength 1 */
+  name: string;
+  /** @minLength 1 */
+  template_id: string;
 }
+
+export type DatasetOptimizationDetailApiConfiguration = { [key: string]: unknown };
 
 export interface DatasetOptimizationDetailApi {
-  readonly id?: string;
-  /**
-     * @minLength 1
-     * @maxLength 255
-     */
-  name: string;
-  /** Column being optimized */
-  column?: string;
-  optimizer_algorithm?: DatasetOptimizationDetailApiOptimizerAlgorithm;
-  /** Model used for optimization (separate from eval model) */
-  optimizer_model?: string;
-  /** Optimizer-specific configuration (num_trials, etc.) */
-  optimizer_config?: DatasetOptimizationDetailApiOptimizerConfig;
+  /** @minLength 1 */
+  readonly optimiser_name?: string;
+  /** @minLength 1 */
+  readonly optimiser_type?: string;
+  /** @minLength 1 */
+  readonly model?: string;
+  readonly model_deprecated?: boolean;
+  /** @minLength 1 */
+  readonly provider_logo?: string;
+  readonly configuration?: DatasetOptimizationDetailApiConfiguration;
   status?: DatasetOptimizationDetailApiStatus;
   error_message?: string;
+  readonly start_time?: string;
+  readonly parameters?: readonly DatasetOptimizationParameterItemApi[];
+  /** @minLength 1 */
+  readonly column_id?: string;
+  /** @minLength 1 */
+  readonly column_name?: string;
   best_score?: number;
   baseline_score?: number;
-  optimized_k_prompts?: string[];
-  readonly steps?: readonly DatasetOptimizationStepApi[];
-  readonly trials?: readonly DatasetOptimizationTrialListApi[];
-  readonly trial_count?: string;
-  readonly created_at?: string;
+  readonly table?: readonly DatasetOptimizationTrialTableRowApi[];
+  readonly column_config?: readonly DatasetOptimizationColumnConfigItemApi[];
+  /** @minLength 1 */
+  readonly optimizer_model_id?: string;
+  readonly user_eval_templates?: readonly DatasetOptimizationEvalTemplateItemApi[];
+}
+
+export interface DatasetOptimizationDetailApiResponseApi {
+  status: boolean;
+  result: DatasetOptimizationDetailApi;
 }
 
 export type DatasetOptimizationApiOptimizerAlgorithm = typeof DatasetOptimizationApiOptimizerAlgorithm[keyof typeof DatasetOptimizationApiOptimizerAlgorithm];
@@ -8158,9 +8430,9 @@ export type PromptConfigApiRunPromptConfig = {[key: string]: { [key: string]: un
 export type PromptConfigApiMessagesItem = {[key: string]: { [key: string]: unknown }};
 
 /**
- * Any valid JSON value.
+ * String or JSON object.
  */
-export type PromptConfigApiResponseFormat = { [key: string]: unknown };
+export type PromptConfigApiResponseFormat = string | { [key: string]: unknown };
 
 export type PromptConfigApiToolsItem = {[key: string]: { [key: string]: unknown }};
 
@@ -8200,7 +8472,7 @@ export interface PromptConfigApi {
      * @maximum 1
      */
   top_p?: number;
-  /** Any valid JSON value. */
+  /** String or JSON object. */
   response_format?: PromptConfigApiResponseFormat;
   /** Tool selection mode: 'auto' or 'required'. */
   tool_choice?: PromptConfigApiToolChoice;
@@ -8312,12 +8584,30 @@ export interface CreateEmptyDatasetRequestApi {
   row?: number;
 }
 
-export type SyntheticDatasetCreationApiDataset = { [key: string]: unknown };
+export type SyntheticDatasetColumnApiProperty = { [key: string]: unknown };
+
+export interface SyntheticDatasetColumnApi {
+  /** @minLength 1 */
+  name: string;
+  /** @minLength 1 */
+  data_type: string;
+  description: string;
+  property: SyntheticDatasetColumnApiProperty;
+  skip?: boolean;
+  is_new?: boolean;
+}
+
+export interface SyntheticDatasetPayloadApi {
+  name?: string;
+  description: string;
+  objective: string;
+  patterns: string;
+}
 
 export interface SyntheticDatasetCreationApi {
   num_rows: number;
-  columns: string[];
-  dataset: SyntheticDatasetCreationApiDataset;
+  columns: SyntheticDatasetColumnApi[];
+  dataset: SyntheticDatasetPayloadApi;
   kb_id?: string;
 }
 
@@ -8369,7 +8659,27 @@ export interface DatasetCellDataRequestApi {
   column_ids: string[];
 }
 
+export type DatasetCellInnerMetadataApiErrorAnalysis = { [key: string]: unknown };
+
+export interface DatasetCellInnerMetadataApi {
+  explanation?: string;
+  error_analysis?: DatasetCellInnerMetadataApiErrorAnalysis;
+  selected_input_key?: string;
+}
+
+export type DatasetCellMetadataApiCost = { [key: string]: unknown };
+
+export interface DatasetCellMetadataApi {
+  response_time_ms?: number;
+  token_count?: number;
+  cost?: DatasetCellMetadataApiCost;
+  cell_metadata?: DatasetCellInnerMetadataApi;
+  reason?: string;
+}
+
 export type DatasetCellValueApiCellValue = { [key: string]: unknown };
+
+export type DatasetCellValueApiCellDiffValue = { [key: string]: unknown };
 
 export type DatasetCellValueApiValueInfos = { [key: string]: unknown };
 
@@ -8377,9 +8687,11 @@ export type DatasetCellValueApiFeedbackInfo = { [key: string]: unknown };
 
 export interface DatasetCellValueApi {
   cell_value?: DatasetCellValueApiCellValue;
+  cell_diff_value?: DatasetCellValueApiCellDiffValue;
   status?: string;
   value_infos?: DatasetCellValueApiValueInfos;
   feedback_info?: DatasetCellValueApiFeedbackInfo;
+  metadata?: DatasetCellMetadataApi;
 }
 
 export type DatasetCellDataResponseApiResult = {[key: string]: {[key: string]: DatasetCellValueApi}};
@@ -8749,12 +9061,10 @@ export interface DatasetStaticColumnRequestApi {
   source?: string;
 }
 
-export type SyntheticDataApiDataset = { [key: string]: unknown };
-
 export interface SyntheticDataApi {
   num_rows: number;
-  columns: string[];
-  dataset: SyntheticDataApiDataset;
+  columns: SyntheticDatasetColumnApi[];
+  dataset: SyntheticDatasetPayloadApi;
   kb_id?: string;
   fill_existing_rows?: boolean;
 }
@@ -8841,8 +9151,6 @@ export interface DatasetTableMetadataApi {
   status?: DatasetTableMetadataApiStatus;
 }
 
-export type DatasetTableColumnApiEvalTag = { [key: string]: unknown };
-
 export type DatasetTableColumnApiMetadata = { [key: string]: unknown };
 
 export type DatasetTableColumnApiChoicesMap = { [key: string]: unknown };
@@ -8868,19 +9176,21 @@ export interface DatasetTableColumnApi {
   reason_column: boolean;
   is_numeric_eval: boolean;
   is_numeric_eval_percentage: boolean;
-  eval_tag: DatasetTableColumnApiEvalTag;
+  eval_tag?: string[];
   metadata: DatasetTableColumnApiMetadata;
   choices_map: DatasetTableColumnApiChoicesMap;
 }
 
-export type DatasetTableResultApiTableItem = { [key: string]: unknown };
+export interface DatasetTableRowApi {
+  row_id: string;
+}
 
 export type DatasetTableResultApiDatasetConfig = { [key: string]: unknown };
 
 export interface DatasetTableResultApi {
   metadata?: DatasetTableMetadataApi;
   column_config: DatasetTableColumnApi[];
-  table?: DatasetTableResultApiTableItem[];
+  table?: DatasetTableRowApi[];
   dataset_config?: DatasetTableResultApiDatasetConfig;
   synthetic_dataset?: boolean;
   synthetic_dataset_percentage?: number;
@@ -9067,14 +9377,10 @@ export interface SyntheticDatasetConfigResponseApi {
   result: SyntheticDatasetConfigResultApi;
 }
 
-export type SyntheticDatasetConfigApiColumnsItem = { [key: string]: unknown };
-
-export type SyntheticDatasetConfigApiDataset = { [key: string]: unknown };
-
 export interface SyntheticDatasetConfigApi {
   num_rows: number;
-  columns: SyntheticDatasetConfigApiColumnsItem[];
-  dataset: SyntheticDatasetConfigApiDataset;
+  columns: SyntheticDatasetColumnApi[];
+  dataset: SyntheticDatasetPayloadApi;
   kb_id?: string;
   regenerate?: boolean;
 }
@@ -10009,6 +10315,9 @@ export interface EvalFeedbackListItemApi {
   user_name: string;
   /** @minLength 1 */
   created_at: string;
+  user_eval_metric_id: string;
+  custom_eval_config_id: string;
+  experiment_id: string;
 }
 
 export interface EvalFeedbackListResponseResultApi {
@@ -10240,38 +10549,81 @@ export interface EvalUsageChartPointApi {
   fail_count?: number;
 }
 
-export type EvalUsageFeedbackApiValue = { [key: string]: unknown };
+export interface EvalUsageNumberCellApi {
+  cell_value?: number;
+}
+
+export interface EvalUsageStringCellApi {
+  cell_value?: string;
+}
 
 export interface EvalUsageFeedbackApi {
   id: string;
-  value?: EvalUsageFeedbackApiValue;
+  value?: string;
   explanation?: string;
   action_type?: string;
   created_at?: string;
   user?: string;
 }
 
-export type EvalUsageLogItemApiDetail = { [key: string]: unknown };
-
-export interface EvalUsageLogItemApi {
-  id: string;
-  input: string;
-  result?: string;
-  score?: number;
-  reason?: string;
-  /** @minLength 1 */
-  status: string;
-  source?: string;
-  /** @minLength 1 */
-  created_at: string;
-  detail: EvalUsageLogItemApiDetail;
-  feedback?: EvalUsageFeedbackApi;
-  composite?: boolean;
-  aggregate_pass?: boolean;
+export interface EvalUsageFeedbackCellApi {
+  cell_value?: EvalUsageFeedbackApi;
 }
 
-export interface EvalUsageLogsApi {
-  items: EvalUsageLogItemApi[];
+export type EvalUsageWarningsCellApiCellValueItem = { [key: string]: unknown };
+
+export interface EvalUsageWarningsCellApi {
+  cell_value?: EvalUsageWarningsCellApiCellValueItem[];
+}
+
+export type EvalUsageLogItemDetailApiInputVariables = {[key: string]: string};
+
+export type EvalUsageLogItemDetailApiOutput = { [key: string]: unknown };
+
+export type EvalUsageLogItemDetailApiMappings = {[key: string]: string};
+
+/**
+ * String or JSON object.
+ */
+export type EvalUsageLogItemDetailApiModel = string | { [key: string]: unknown };
+
+export interface EvalUsageLogItemDetailApi {
+  input_variables?: EvalUsageLogItemDetailApiInputVariables;
+  output?: EvalUsageLogItemDetailApiOutput;
+  warnings?: string[];
+  mappings?: EvalUsageLogItemDetailApiMappings;
+  /** String or JSON object. */
+  model?: EvalUsageLogItemDetailApiModel;
+  /** @minLength 1 */
+  version_id?: string;
+  version_number?: number;
+  children?: string[];
+  aggregation_function?: string;
+  total_children?: number;
+  completed_children?: number;
+  failed_children?: number;
+}
+
+export interface EvalUsageTableRowApi {
+  /** @minLength 1 */
+  row_id: string;
+  score?: EvalUsageNumberCellApi;
+  result?: EvalUsageStringCellApi;
+  input?: EvalUsageStringCellApi;
+  reason?: EvalUsageStringCellApi;
+  source?: EvalUsageStringCellApi;
+  version?: EvalUsageStringCellApi;
+  feedback?: EvalUsageFeedbackCellApi;
+  created_at?: EvalUsageStringCellApi;
+  status?: EvalUsageStringCellApi;
+  warnings?: EvalUsageWarningsCellApi;
+  detail?: EvalUsageLogItemDetailApi;
+  composite?: boolean;
+  aggregate_pass?: boolean;
+  [key: string]: unknown;
+ }
+
+export interface EvalUsagePaginationApi {
   total: number;
   page: number;
   page_size: number;
@@ -10282,7 +10634,8 @@ export interface EvalUsageStatsResponseResultApi {
   is_composite: boolean;
   stats: EvalUsageStatsApi;
   chart: EvalUsageChartPointApi[];
-  logs: EvalUsageLogsApi;
+  table: EvalUsageTableRowApi[];
+  logs: EvalUsagePaginationApi;
 }
 
 export interface EvalUsageStatsResponseApi {
@@ -10491,13 +10844,74 @@ export const ExperimentCreateV2ApiExperimentType = {
   image: 'image',
 } as const;
 
-export type PromptConfigEntryApiModel = { [key: string]: unknown };
+/**
+ * String or JSON object.
+ */
+export type PromptModelParamsApiResponseFormat = string | { [key: string]: unknown };
 
-export type PromptConfigEntryApiModelParams = {[key: string]: string};
+export interface PromptModelParamsApi {
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  /** String or JSON object. */
+  response_format?: PromptModelParamsApiResponseFormat;
+  [key: string]: unknown;
+ }
 
-export type PromptConfigEntryApiConfiguration = {[key: string]: string};
+/**
+ * Any valid JSON value.
+ */
+export type PromptConfigurationApiToolsItem = { [key: string]: unknown };
 
-export type PromptConfigEntryApiMessagesItem = {[key: string]: string};
+/**
+ * Any valid JSON value.
+ */
+export type PromptConfigurationApiModelDetail = { [key: string]: unknown };
+
+export interface PromptConfigurationApi {
+  tool_choice?: string;
+  template_format?: string;
+  tools?: PromptConfigurationApiToolsItem[];
+  output_format?: string;
+  model_type?: string;
+  /** Any valid JSON value. */
+  model_detail?: PromptConfigurationApiModelDetail;
+  voice_id?: string;
+  [key: string]: unknown;
+ }
+
+/**
+ * Plain text string or array of content-part objects.
+ */
+export type MessageItemApiContent = string | unknown[];
+
+/**
+ * Any valid JSON value.
+ */
+export type MessageItemApiToolCalls = { [key: string]: unknown };
+
+export interface MessageItemApi {
+  /** @minLength 1 */
+  role: string;
+  /** Plain text string or array of content-part objects. */
+  content: MessageItemApiContent;
+  /** @minLength 1 */
+  name?: string;
+  /** Any valid JSON value. */
+  tool_calls?: MessageItemApiToolCalls;
+  /** @minLength 1 */
+  tool_call_id?: string;
+  /** @minLength 1 */
+  id?: string;
+  [key: string]: unknown;
+ }
+
+/**
+ * String or JSON object.
+ */
+export type PromptConfigEntryApiModel = string | { [key: string]: unknown };
 
 export interface PromptConfigEntryApi {
   id?: string;
@@ -10506,12 +10920,13 @@ export interface PromptConfigEntryApi {
   prompt_version?: string;
   agent_id?: string;
   agent_version?: string;
+  /** String or JSON object. */
   model?: PromptConfigEntryApiModel;
-  model_params?: PromptConfigEntryApiModelParams;
-  configuration?: PromptConfigEntryApiConfiguration;
+  model_params?: PromptModelParamsApi;
+  configuration?: PromptConfigurationApi;
   /** @minLength 1 */
   output_format?: string;
-  messages?: PromptConfigEntryApiMessagesItem[];
+  messages?: MessageItemApi[];
   voice_input_column_id?: string;
 }
 
@@ -10902,6 +11317,8 @@ export interface ExperimentFeedbackDetailsResponseApi {
   result: ExperimentFeedbackDetailsResultApi;
 }
 
+export type ExperimentFeedbackTemplateResultApiChoiceScores = {[key: string]: number};
+
 export interface ExperimentFeedbackTemplateResultApi {
   /** @minLength 1 */
   output_type?: string;
@@ -10912,6 +11329,7 @@ export interface ExperimentFeedbackTemplateResultApi {
   user_eval_name: string;
   choices?: string[];
   multi_choice?: boolean;
+  choice_scores?: ExperimentFeedbackTemplateResultApiChoiceScores;
 }
 
 export interface ExperimentFeedbackTemplateResponseApi {
@@ -10929,13 +11347,11 @@ export const ExperimentFeedbackSubmitRequestApiActionType = {
   retune_recalculate: 'retune_recalculate',
 } as const;
 
-export type ExperimentFeedbackSubmitRequestApiValue = { [key: string]: unknown };
-
 export interface ExperimentFeedbackSubmitRequestApi {
   action_type: ExperimentFeedbackSubmitRequestApiActionType;
   feedback_id: string;
   user_eval_metric_id: string;
-  value?: ExperimentFeedbackSubmitRequestApiValue;
+  value?: string;
   explanation?: string;
 }
 
@@ -11108,6 +11524,45 @@ export interface ExperimentMessageResponseApi {
   result: ExperimentMessageResultApi;
 }
 
+export interface FeedbackDetailsItemApi {
+  id: string;
+  value: string;
+  comment: string;
+  /** @minLength 1 */
+  created_at: string;
+  action_type: string;
+}
+
+export interface FeedbackDetailsResultApi {
+  feedback: FeedbackDetailsItemApi[];
+  total_count: number;
+}
+
+export interface FeedbackDetailsResponseApi {
+  status: boolean;
+  result: FeedbackDetailsResultApi;
+}
+
+export type FeedbackTemplateResultApiChoiceScores = {[key: string]: number};
+
+export interface FeedbackTemplateResultApi {
+  /** @minLength 1 */
+  output_type?: string;
+  eval_description?: string;
+  /** @minLength 1 */
+  eval_name: string;
+  /** @minLength 1 */
+  user_eval_name: string;
+  choices?: string[];
+  multi_choice?: boolean;
+  choice_scores?: FeedbackTemplateResultApiChoiceScores;
+}
+
+export interface FeedbackTemplateResponseApi {
+  status: boolean;
+  result: FeedbackTemplateResultApi;
+}
+
 export type ColumnValuesRequestApiColumnPlaceholders = { [key: string]: unknown };
 
 export interface ColumnValuesRequestApi {
@@ -11194,6 +11649,7 @@ export interface EvalConfigApi {
   config_params_option?: EvalConfigApiConfigParamsOption;
   param_modalities?: EvalConfigApiParamModalities;
   choices?: EvalConfigApiChoices;
+  multi_choice?: boolean;
   check_internet?: boolean;
   kb_id?: EvalConfigApiKbId;
   error_localizer?: boolean;
@@ -11552,7 +12008,7 @@ export interface KnowledgeBaseCreateApi {
      * @maximum 2147483647
      */
   chunk_size: number;
-  organization?: string;
+  readonly organization?: string;
   readonly created_at?: string;
   readonly updated_at?: string;
 }
@@ -11647,6 +12103,10 @@ export interface LegacyKnowledgeBaseMutationResponseApi {
   result: LegacyKnowledgeBaseMutationResultApi;
 }
 
+export interface LegacyKnowledgeBaseBulkDeleteRequestApi {
+  kb_ids?: string[];
+}
+
 export type LegacyKnowledgeBaseFilesRequestApiSortItem = { [key: string]: unknown };
 
 export interface LegacyKnowledgeBaseFilesRequestApi {
@@ -11681,6 +12141,14 @@ export interface LegacyKnowledgeBaseFilesResultApi {
 export interface LegacyKnowledgeBaseFilesResponseApi {
   status: boolean;
   result: LegacyKnowledgeBaseFilesResultApi;
+}
+
+export interface LegacyKnowledgeBaseFileDeleteRequestApi {
+  kb_id?: string;
+  delete_all?: boolean;
+  file_ids?: string[];
+  excluded_file_ids?: string[];
+  file_names?: string[];
 }
 
 export interface LegacyKnowledgeBaseTableColumnApi {
@@ -12470,11 +12938,23 @@ export interface PromptFolderApi {
 
 export type PromptHistoryExecutionApiOutput = { [key: string]: unknown };
 
+/**
+ *
+Get prompt_config_snapshot with backward compatibility for modelDetail.
+If modelDetail is missing from configuration, generate it from the model name.
+
+ */
+export type PromptHistoryExecutionApiPromptConfigSnapshot = { [key: string]: unknown };
+
 export type PromptHistoryExecutionApiMetadata = { [key: string]: unknown };
+
+export type PromptHistoryExecutionApiVariableNames = { [key: string]: unknown };
 
 export type PromptHistoryExecutionApiEvaluationResults = { [key: string]: unknown };
 
 export type PromptHistoryExecutionApiEvaluationConfigs = { [key: string]: unknown };
+
+export type PromptHistoryExecutionApiLabels = { [key: string]: unknown };
 
 export type PromptHistoryExecutionApiPlaceholders = { [key: string]: unknown };
 
@@ -12486,19 +12966,24 @@ export interface PromptHistoryExecutionApi {
      */
   template_version: string;
   readonly output?: PromptHistoryExecutionApiOutput;
-  readonly prompt_config_snapshot?: string;
+  /**
+  Get prompt_config_snapshot with backward compatibility for modelDetail.
+  If modelDetail is missing from configuration, generate it from the model name.
+   */
+  readonly prompt_config_snapshot?: PromptHistoryExecutionApiPromptConfigSnapshot;
+  /** @minLength 1 */
   readonly template_name?: string;
   original_template?: string;
-  metadata?: PromptHistoryExecutionApiMetadata;
-  readonly variable_names?: string;
+  readonly metadata?: PromptHistoryExecutionApiMetadata;
+  readonly variable_names?: PromptHistoryExecutionApiVariableNames;
   evaluation_results?: PromptHistoryExecutionApiEvaluationResults;
-  evaluation_configs?: PromptHistoryExecutionApiEvaluationConfigs;
+  readonly evaluation_configs?: PromptHistoryExecutionApiEvaluationConfigs;
   readonly created_at?: string;
   is_default?: boolean;
   commit_message?: string;
   readonly updated_at?: string;
   is_draft?: boolean;
-  readonly labels?: string;
+  readonly labels?: PromptHistoryExecutionApiLabels;
   placeholders?: PromptHistoryExecutionApiPlaceholders;
   prompt_base_template?: string;
 }
@@ -12705,9 +13190,9 @@ export const LitellmApiOutputFormat = {
 } as const;
 
 /**
- * JSON schema for response format if required. Defaults to None.
+ * String or JSON object.
  */
-export type LitellmApiResponseFormat = { [key: string]: unknown };
+export type LitellmApiResponseFormat = string | { [key: string]: unknown };
 
 /**
  * Tool selection mode: 'auto' or 'required'.
@@ -12773,7 +13258,7 @@ export interface LitellmApi {
      * @maximum 1
      */
   top_p?: number;
-  /** JSON schema for response format if required. Defaults to None. */
+  /** String or JSON object. */
   response_format?: LitellmApiResponseFormat;
   /** Tool selection mode: 'auto' or 'required'. */
   tool_choice?: LitellmApiToolChoice;
@@ -13676,6 +14161,8 @@ export interface AgentDefinitionListResponseApi {
   readonly contact_number?: string;
   /** Whether the agent handles inbound calls */
   readonly inbound?: boolean;
+  /** Whether the target agent speaks first (greets) in a hosted voice simulation. True: the simulator waits for the target's greeting; False: the simulator opens the conversation; null: derive from inbound/outbound. Retell targets always let the simulator open (SDK limitation). */
+  readonly target_speaks_first?: boolean;
   /**
      * Detailed description of the AI agent's purpose and capabilities
      * @minLength 1
@@ -13803,6 +14290,7 @@ export interface AgentDefinitionCreateRequestApi {
   /** @minLength 1 */
   commit_message: string;
   inbound?: boolean;
+  target_speaks_first?: boolean;
   description?: string;
   provider?: string;
   api_key?: string;
@@ -13824,7 +14312,10 @@ export interface AgentDefinitionCreateRequestApi {
   livekit_api_secret?: string;
   livekit_agent_name?: string;
   livekit_config_json?: AgentDefinitionCreateRequestApiLivekitConfigJson;
-  /** @minimum 1 */
+  /**
+     * @minimum 1
+     * @maximum 25
+     */
   livekit_max_concurrency?: number;
 }
 
@@ -13944,6 +14435,8 @@ export interface AgentDefinitionResponseApi {
   readonly contact_number?: string;
   /** Whether the agent handles inbound calls */
   readonly inbound?: boolean;
+  /** Whether the target agent speaks first (greets) in a hosted voice simulation. True: the simulator waits for the target's greeting; False: the simulator opens the conversation; null: derive from inbound/outbound. Retell targets always let the simulator open (SDK limitation). */
+  readonly target_speaks_first?: boolean;
   /**
      * Detailed description of the AI agent's purpose and capabilities
      * @minLength 1
@@ -14040,6 +14533,7 @@ export interface AgentDefinitionEditRequestApi {
   languages?: string[];
   contact_number?: string;
   inbound?: boolean;
+  target_speaks_first?: boolean;
   knowledge_base?: string;
   model?: string;
   model_details?: AgentDefinitionEditRequestApiModelDetails;
@@ -14051,7 +14545,10 @@ export interface AgentDefinitionEditRequestApi {
   livekit_api_secret?: string;
   livekit_agent_name?: string;
   livekit_config_json?: AgentDefinitionEditRequestApiLivekitConfigJson;
-  /** @minimum 1 */
+  /**
+     * @minimum 1
+     * @maximum 25
+     */
   livekit_max_concurrency?: number;
 }
 
@@ -14144,6 +14641,7 @@ export interface AgentVersionCreateRequestApi {
   languages?: string[];
   contact_number?: string;
   inbound?: boolean;
+  target_speaks_first?: boolean;
   knowledge_base?: string;
   model?: string;
   model_details?: AgentVersionCreateRequestApiModelDetails;
@@ -14156,7 +14654,10 @@ export interface AgentVersionCreateRequestApi {
   /** @maxLength 255 */
   livekit_agent_name?: string;
   livekit_config_json?: AgentVersionCreateRequestApiLivekitConfigJson;
-  /** @minimum 1 */
+  /**
+     * @minimum 1
+     * @maximum 25
+     */
   livekit_max_concurrency?: number;
   commit_message?: string;
   observability_enabled?: boolean;
@@ -14636,6 +15137,8 @@ export interface AgentDefinitionApi {
   contact_number?: string;
   /** Whether the agent handles inbound calls */
   inbound: boolean;
+  /** Whether the target agent speaks first (greets) in a hosted voice simulation. True: the simulator waits for the target's greeting; False: the simulator opens the conversation; null: derive from inbound/outbound. Retell targets always let the simulator open (SDK limitation). */
+  target_speaks_first?: boolean;
   /**
      * Detailed description of the AI agent's purpose and capabilities
      * @minLength 1
@@ -14689,7 +15192,7 @@ export interface AgentDefinitionApi {
 }
 
 /**
- * Voice provider. One of: vapi, retell, eleven_labs, others.
+ * Voice provider. One of: vapi, retell, eleven_labs, bland, others.
  */
 export type FetchAssistantRequestApiProvider = typeof FetchAssistantRequestApiProvider[keyof typeof FetchAssistantRequestApiProvider];
 
@@ -14698,6 +15201,7 @@ export const FetchAssistantRequestApiProvider = {
   vapi: 'vapi',
   retell: 'retell',
   eleven_labs: 'eleven_labs',
+  bland: 'bland',
   others: 'others',
 } as const;
 
@@ -14707,7 +15211,7 @@ export interface FetchAssistantRequestApi {
   /** @minLength 1 */
   api_key: string;
   agent_id?: string;
-  /** Voice provider. One of: vapi, retell, eleven_labs, others. */
+  /** Voice provider. One of: vapi, retell, eleven_labs, bland, others. */
   provider?: FetchAssistantRequestApiProvider;
 }
 
@@ -15131,6 +15635,199 @@ export interface AgentPromptOptimiserTrialScenariosResultApi {
 export interface AgentPromptOptimiserTrialScenariosResponseApi {
   status?: boolean;
   result: AgentPromptOptimiserTrialScenariosResultApi;
+}
+
+export interface ALKSimulateRecordingUploadResultApi {
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  recording_url: string;
+  /** @minLength 1 */
+  object_key: string;
+}
+
+export interface ALKSimulateRecordingUploadResponseApi {
+  status?: boolean;
+  result: ALKSimulateRecordingUploadResultApi;
+}
+
+export type ALKSimulateResultApiStatus = typeof ALKSimulateResultApiStatus[keyof typeof ALKSimulateResultApiStatus];
+
+
+export const ALKSimulateResultApiStatus = {
+  completed: 'completed',
+  failed: 'failed',
+  cancelled: 'cancelled',
+} as const;
+
+export type ALKSimulateResultApiProviderCallData = { [key: string]: unknown };
+
+export type ALKSimulateResultApiCallMetadata = { [key: string]: unknown };
+
+export type ALKSimulateTranscriptSegmentApiSpeakerRole = typeof ALKSimulateTranscriptSegmentApiSpeakerRole[keyof typeof ALKSimulateTranscriptSegmentApiSpeakerRole];
+
+
+export const ALKSimulateTranscriptSegmentApiSpeakerRole = {
+  user: 'user',
+  assistant: 'assistant',
+  system: 'system',
+  tool_calls: 'tool_calls',
+  tool_call_result: 'tool_call_result',
+  unknown: 'unknown',
+} as const;
+
+export type ALKSimulateTranscriptSegmentApiToolCalls = { [key: string]: unknown };
+
+export interface ALKSimulateTranscriptSegmentApi {
+  speaker_role: ALKSimulateTranscriptSegmentApiSpeakerRole;
+  content: string;
+  /** @minimum 0 */
+  start_time_ms?: number;
+  /** @minimum 0 */
+  end_time_ms?: number;
+  /**
+     * @minimum 0
+     * @maximum 1
+     */
+  confidence_score?: number;
+  /** @minimum 0 */
+  latency_ms?: number;
+  tool_calls?: ALKSimulateTranscriptSegmentApiToolCalls;
+  /** @maxLength 255 */
+  tool_call_id?: string;
+}
+
+export interface ALKSimulateCostBreakdownApi {
+  stt_cost_cents?: number;
+  llm_cost_cents?: number;
+  tts_cost_cents?: number;
+  storage_cost_cents?: number;
+  cost_cents?: number;
+}
+
+export interface ALKSimulateResultApi {
+  status: ALKSimulateResultApiStatus;
+  started_at?: string;
+  ended_at?: string;
+  /** @minimum 0 */
+  duration_seconds?: number;
+  /** @maxLength 10000 */
+  ended_reason?: string;
+  error_message?: string;
+  call_summary?: string;
+  transcript?: ALKSimulateTranscriptSegmentApi[];
+  /** @maxLength 500 */
+  recording_url?: string;
+  /** @maxLength 500 */
+  stereo_recording_url?: string;
+  costs?: ALKSimulateCostBreakdownApi;
+  provider_call_data?: ALKSimulateResultApiProviderCallData;
+  call_metadata?: ALKSimulateResultApiCallMetadata;
+}
+
+export interface ALKSimulateResultOutcomeApi {
+  call_execution_id: string;
+  /** @minLength 1 */
+  status: string;
+  eval_dispatched: boolean;
+}
+
+export interface ALKSimulateResultResponseApi {
+  status?: boolean;
+  result: ALKSimulateResultOutcomeApi;
+}
+
+export type ALKSimulateStatusUpdateApiStatus = typeof ALKSimulateStatusUpdateApiStatus[keyof typeof ALKSimulateStatusUpdateApiStatus];
+
+
+export const ALKSimulateStatusUpdateApiStatus = {
+  ongoing: 'ongoing',
+} as const;
+
+export interface ALKSimulateStatusUpdateApi {
+  status: ALKSimulateStatusUpdateApiStatus;
+}
+
+export interface ALKSimulateStatusUpdateOutcomeApi {
+  updated: boolean;
+}
+
+export interface ALKSimulateStatusUpdateResponseApi {
+  status?: boolean;
+  result: ALKSimulateStatusUpdateOutcomeApi;
+}
+
+export type ALKSimulateProvisionPersonaApiPersona = { [key: string]: unknown };
+
+export interface ALKSimulateProvisionPersonaApi {
+  /** @maxLength 255 */
+  name?: string;
+  /** @maxLength 255 */
+  role?: string;
+  situation?: string;
+  outcome?: string;
+  persona?: ALKSimulateProvisionPersonaApiPersona;
+}
+
+export interface ALKSimulateProvisionRunTestRequestApi {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name: string;
+  description?: string;
+  personas?: ALKSimulateProvisionPersonaApi[];
+  scenario_ids?: string[];
+  agent_definition_id?: string;
+  /** @maxLength 255 */
+  agent_name?: string;
+}
+
+export interface ALKSimulateProvisionResultApi {
+  run_test_id: string;
+  scenario_ids: string[];
+  agent_definition_id: string;
+}
+
+export interface ALKSimulateProvisionResponseApi {
+  status?: boolean;
+  result: ALKSimulateProvisionResultApi;
+}
+
+export interface ALKSimulateStartTestExecutionRequestApi {
+  scenario_ids?: string[];
+  simulator_agent_id?: string;
+}
+
+export interface ALKSimulateStartTestExecutionResultApi {
+  test_execution_id: string;
+  run_test_id: string;
+  scenario_ids: string[];
+  total_scenarios: number;
+  /** @minLength 1 */
+  status: string;
+}
+
+export interface ALKSimulateStartTestExecutionResponseApi {
+  status?: boolean;
+  result: ALKSimulateStartTestExecutionResultApi;
+}
+
+export interface ALKSimulateBatchCreateRequestApi {
+  /** @minimum 1 */
+  count?: number;
+}
+
+export interface ALKSimulateBatchCreateResultApi {
+  call_execution_ids: string[];
+  has_more: boolean;
+  batched_scenarios: string[];
+}
+
+export interface ALKSimulateBatchCreateResponseApi {
+  status?: boolean;
+  result: ALKSimulateBatchCreateResultApi;
 }
 
 export type CallExecutionErrorResponseApiType = typeof CallExecutionErrorResponseApiType[keyof typeof CallExecutionErrorResponseApiType];
@@ -15869,9 +16566,9 @@ export interface PersonaFieldOptionsApi {
   readonly regional_mix_choices?: string;
 }
 
-export type RunTestResponseApiAgentVersion = {[key: string]: string};
+export type RunTestResponseApiAgentVersion = { [key: string]: unknown };
 
-export type RunTestResponseApiAgentDefinitionDetail = {[key: string]: string};
+export type RunTestResponseApiAgentDefinitionDetail = { [key: string]: unknown };
 
 /**
  * Source type for the test run: agent_definition or prompt
@@ -15884,13 +16581,13 @@ export const RunTestResponseApiSourceType = {
   prompt: 'prompt',
 } as const;
 
-export type RunTestResponseApiPromptTemplateDetail = {[key: string]: string};
+export type RunTestResponseApiPromptTemplateDetail = { [key: string]: unknown };
 
-export type RunTestResponseApiPromptVersionDetail = {[key: string]: string};
+export type RunTestResponseApiPromptVersionDetail = { [key: string]: unknown };
 
-export type RunTestResponseApiScenariosDetailItem = {[key: string]: string};
+export type RunTestResponseApiScenariosDetailItem = { [key: string]: unknown };
 
-export type RunTestResponseApiSimulatorAgentDetail = {[key: string]: string};
+export type RunTestResponseApiSimulatorAgentDetail = { [key: string]: unknown };
 
 export type SimulateEvalConfigResponseApiConfig = { [key: string]: unknown };
 
@@ -15943,10 +16640,6 @@ export interface RunTestResponseApi {
      * @minLength 1
      */
   readonly name?: string;
-  /**
-     * Description of the test run
-     * @minLength 1
-     */
   readonly description?: string;
   /** Agent definition for this test run */
   readonly agent_definition?: string;
@@ -16748,6 +17441,17 @@ export interface ExecutePromptSimulationResponseApi {
   result: ExecutePromptSimulationResultApi;
 }
 
+export interface RunTestListPaginatedResponseApi {
+  readonly count?: number;
+  /** @minLength 1 */
+  readonly next?: string;
+  /** @minLength 1 */
+  readonly previous?: string;
+  readonly results?: readonly RunTestResponseApi[];
+  readonly total_pages?: number;
+  readonly current_page?: number;
+}
+
 export type AllActiveTestsApiActiveTests = {[key: string]: string};
 
 export interface AllActiveTestsApi {
@@ -16893,17 +17597,6 @@ export interface AddEvalConfigsRequestApi {
   evaluations_config: EvalConfigDefinitionApi[];
 }
 
-export type EvalConfigResponseApiModel = typeof EvalConfigResponseApiModel[keyof typeof EvalConfigResponseApiModel];
-
-
-export const EvalConfigResponseApiModel = {
-  turing_large: 'turing_large',
-  turing_small: 'turing_small',
-  protect: 'protect',
-  protect_flash: 'protect_flash',
-  turing_flash: 'turing_flash',
-} as const;
-
 export type EvalConfigResponseApiStatus = typeof EvalConfigResponseApiStatus[keyof typeof EvalConfigResponseApiStatus];
 
 
@@ -16941,7 +17634,8 @@ export interface EvalConfigResponseApi {
   mapping?: EvalConfigResponseApiMapping;
   filters?: EvalConfigResponseApiFilters;
   error_localizer?: boolean;
-  model?: EvalConfigResponseApiModel;
+  /** @maxLength 255 */
+  model?: string;
   status?: EvalConfigResponseApiStatus;
   readonly eval_group?: string;
   readonly template_id?: string;
@@ -17027,6 +17721,29 @@ export type EvalConfigUpdateRequestApiConfig = { [key: string]: unknown };
  */
 export type EvalConfigUpdateRequestApiMapping = { [key: string]: unknown };
 
+export type EvalConfigUpdateRequestApiFiltersItemFilterConfig = {
+  /** Canonical field type, for example text, number, boolean, datetime, categorical, thumbs, annotator, or array. */
+  filter_type: string;
+  /** Canonical operator from api_contracts/filter_contract.json, for example equals, not_equals, in, not_in, between, not_between, is_null, or is_not_null. */
+  filter_op: string;
+  /** Scalar, list, range tuple, boolean, or null depending on filter_op and filter_type. */
+  filter_value?: unknown;
+  /** Column family such as SYSTEM_METRIC, SPAN_ATTRIBUTE, EVAL_METRIC, ANNOTATION, or NORMAL. */
+  col_type?: string;
+};
+
+export type EvalConfigUpdateRequestApiFiltersItem = {
+  /** Column or attribute id to filter on. */
+  column_id: string;
+  /** Optional UI label for chips and saved views. */
+  display_name?: string;
+  /** Optional source surface for mixed-source filters, for example traces, datasets, or simulation. */
+  source?: string;
+  /** Optional metric output type metadata used by eval and annotation filters. */
+  output_type?: string;
+  filter_config: EvalConfigUpdateRequestApiFiltersItemFilterConfig;
+};
+
 export interface EvalConfigUpdateRequestApi {
   /** Updated evaluation configuration parameters. */
   config?: EvalConfigUpdateRequestApiConfig;
@@ -17039,8 +17756,12 @@ export interface EvalConfigUpdateRequestApi {
   model?: string;
   /** Enable granular error localization in evaluation results. */
   error_localizer?: boolean;
-  /** UUID of a knowledge base to use for grounding. Pass null to clear. */
+  /** UUID of a knowledge base to use for grounding. Pass null to clear. Switching template_id without providing an explicit kb_id will clear the KB association. */
   kb_id?: string;
+  /** UUID of the evaluation template to switch to. */
+  template_id?: string;
+  /** Updated canonical filter list to restrict which test results are evaluated. */
+  filters?: EvalConfigUpdateRequestApiFiltersItem[];
   /**
      * Updated name for the evaluation configuration.
      * @minLength 1
@@ -17116,6 +17837,15 @@ export interface TestExecutionItemResponseApi {
   readonly total_number_of_fagi_agent_turns?: number;
   /** @minLength 1 */
   readonly source_type?: string;
+}
+
+export interface RunTestExecutionsResponseApi {
+  readonly count?: number;
+  /** @minLength 1 */
+  readonly next?: string;
+  /** @minLength 1 */
+  readonly previous?: string;
+  readonly results?: readonly TestExecutionItemResponseApi[];
 }
 
 /**
@@ -17524,6 +18254,15 @@ export const ScenarioDetailResponseApiStatus = {
 
 export type ScenarioDetailResponseApiGraph = {[key: string]: string};
 
+export interface DatasetColumnConfigEntryApi {
+  /** @minLength 1 */
+  readonly name?: string;
+  /** @minLength 1 */
+  readonly type?: string;
+}
+
+export type ScenarioDetailResponseApiDatasetColumnConfig = {[key: string]: DatasetColumnConfigEntryApi};
+
 export type ScenarioPromptItemApiRole = typeof ScenarioPromptItemApiRole[keyof typeof ScenarioPromptItemApiRole];
 
 
@@ -17561,6 +18300,7 @@ export interface ScenarioDetailResponseApi {
   readonly graph?: ScenarioDetailResponseApiGraph;
   readonly prompts?: readonly ScenarioPromptItemApi[];
   readonly dataset_rows?: number;
+  readonly dataset_column_config?: ScenarioDetailResponseApiDatasetColumnConfig;
 }
 
 export interface ScenarioAddColumnsRequestApi {
@@ -17987,6 +18727,138 @@ export interface TestExecutionTranscriptsResponseApi {
   readonly total_transcripts?: number;
 }
 
+export interface DeploymentHeartbeatApi {
+  schema_version?: number;
+  instance_id: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  version: string;
+  window_start: string;
+  window_end: string;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  active_users_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  traces_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  spans_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  projects_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  eval_logger_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  model_hub_evaluations_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  dataset_eval_runs_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  total_evaluations_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  simulation_runs_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  simulation_calls_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  experiments_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  gateway_requests_count: number;
+  /**
+     * @minimum 0
+     * @maximum 9223372036854776000
+     */
+  datasets_count: number;
+}
+
+export type DeploymentHeartbeatResponseApiStatus = typeof DeploymentHeartbeatResponseApiStatus[keyof typeof DeploymentHeartbeatResponseApiStatus];
+
+
+export const DeploymentHeartbeatResponseApiStatus = {
+  ok: 'ok',
+} as const;
+
+export interface DeploymentHeartbeatResponseApi {
+  status: DeploymentHeartbeatResponseApiStatus;
+}
+
+export interface TelemetryUserApi {
+  /**
+     * @minLength 1
+     * @maxLength 254
+     */
+  email: string;
+  /**
+     * @minLength 1
+     * @maxLength 253
+     */
+  domain: string;
+}
+
+export interface DeploymentRegistrationApi {
+  schema_version?: number;
+  instance_id: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  version: string;
+  /**
+     * @minLength 1
+     * @maxLength 50
+     */
+  deployment_type: string;
+  timestamp: string;
+  telemetry_disabled: boolean;
+  users?: TelemetryUserApi[];
+}
+
+export type DeploymentRegistrationResponseApiStatus = typeof DeploymentRegistrationResponseApiStatus[keyof typeof DeploymentRegistrationResponseApiStatus];
+
+
+export const DeploymentRegistrationResponseApiStatus = {
+  ok: 'ok',
+} as const;
+
+export interface DeploymentRegistrationResponseApi {
+  status: DeploymentRegistrationResponseApiStatus;
+  /** @minLength 1 */
+  instance_secret: string;
+}
+
 export interface BulkAnnotationAnnotationRequestApi {
   annotation_label_id: string;
   value?: string;
@@ -18104,17 +18976,6 @@ export type CustomEvalConfigApiMapping = { [key: string]: unknown };
 
 export type CustomEvalConfigApiFilters = { [key: string]: unknown };
 
-export type CustomEvalConfigApiModel = typeof CustomEvalConfigApiModel[keyof typeof CustomEvalConfigApiModel];
-
-
-export const CustomEvalConfigApiModel = {
-  turing_large: 'turing_large',
-  turing_small: 'turing_small',
-  protect: 'protect',
-  protect_flash: 'protect_flash',
-  turing_flash: 'turing_flash',
-} as const;
-
 export interface CustomEvalConfigApi {
   readonly id?: string;
   eval_template: string;
@@ -18126,7 +18987,8 @@ export interface CustomEvalConfigApi {
   filters?: CustomEvalConfigApiFilters;
   error_localizer?: boolean;
   kb_id?: string;
-  model?: CustomEvalConfigApiModel;
+  /** @maxLength 255 */
+  model?: string;
   readonly eval_group?: string;
 }
 
@@ -18614,6 +19476,48 @@ export interface ObserveDatasetApi {
   readonly user?: string;
 }
 
+/**
+ * Which time-window preset the user chose. The frontend resolves it to date_range at save time; this records the intent so a relative window can be re-anchored on the next save. Never read when building a query — date_range remains authoritative. Absent on tasks predating this field. The enum documents the accepted values; it is not enforced.
+ */
+export type EvalTaskApiFiltersDatePreset = typeof EvalTaskApiFiltersDatePreset[keyof typeof EvalTaskApiFiltersDatePreset];
+
+
+export const EvalTaskApiFiltersDatePreset = {
+  '30m': '30m',
+  '6h': '6h',
+  today: 'today',
+  yesterday: 'yesterday',
+  '7d': '7d',
+  '30d': '30d',
+  '3m': '3m',
+  '6m': '6m',
+  '12m': '12m',
+  custom: 'custom',
+} as const;
+
+export type EvalTaskApiFiltersFiltersItemFilterConfig = {
+  /** Canonical field type, for example text, number, boolean, datetime, categorical, thumbs, annotator, or array. */
+  filter_type: string;
+  /** Canonical operator from api_contracts/filter_contract.json, for example equals, not_equals, in, not_in, between, not_between, is_null, or is_not_null. */
+  filter_op: string;
+  /** Scalar, list, range tuple, boolean, or null depending on filter_op and filter_type. */
+  filter_value?: unknown;
+  /** Column family such as SYSTEM_METRIC, SPAN_ATTRIBUTE, EVAL_METRIC, ANNOTATION, or NORMAL. */
+  col_type?: string;
+};
+
+export type EvalTaskApiFiltersFiltersItem = {
+  /** Column or attribute id to filter on. */
+  column_id: string;
+  /** Optional UI label for chips and saved views. */
+  display_name?: string;
+  /** Optional source surface for mixed-source filters, for example traces, datasets, or simulation. */
+  source?: string;
+  /** Optional metric output type metadata used by eval and annotation filters. */
+  output_type?: string;
+  filter_config: EvalTaskApiFiltersFiltersItemFilterConfig;
+};
+
 export type EvalTaskApiFiltersSpanAttributesFiltersItemFilterConfig = {
   /** Canonical field type, for example text, number, boolean, datetime, categorical, thumbs, annotator, or array. */
   filter_type: string;
@@ -18646,6 +19550,8 @@ export type EvalTaskApiFilters = {
      * @maxItems 2
      */
   date_range?: string[];
+  /** Which time-window preset the user chose. The frontend resolves it to date_range at save time; this records the intent so a relative window can be re-anchored on the next save. Never read when building a query — date_range remains authoritative. Absent on tasks predating this field. The enum documents the accepted values; it is not enforced. */
+  date_preset?: EvalTaskApiFiltersDatePreset;
   /** Lower-bound ISO timestamp for legacy task filters. */
   created_at?: string;
   /** Trace session id(s) to constrain the task. */
@@ -18656,6 +19562,7 @@ export type EvalTaskApiFilters = {
   span_id?: string[];
   /** Observation span type(s), for example llm, tool, or chain. */
   observation_type?: string[];
+  filters?: EvalTaskApiFiltersFiltersItem[];
   span_attributes_filters?: EvalTaskApiFiltersSpanAttributesFiltersItem[];
 };
 
@@ -18749,6 +19656,48 @@ export interface EvalTaskMessageResponseApi {
   result: EvalTaskMessageResultApi;
 }
 
+/**
+ * Which time-window preset the user chose. The frontend resolves it to date_range at save time; this records the intent so a relative window can be re-anchored on the next save. Never read when building a query — date_range remains authoritative. Absent on tasks predating this field. The enum documents the accepted values; it is not enforced.
+ */
+export type EvalTaskUpdateRequestApiFiltersDatePreset = typeof EvalTaskUpdateRequestApiFiltersDatePreset[keyof typeof EvalTaskUpdateRequestApiFiltersDatePreset];
+
+
+export const EvalTaskUpdateRequestApiFiltersDatePreset = {
+  '30m': '30m',
+  '6h': '6h',
+  today: 'today',
+  yesterday: 'yesterday',
+  '7d': '7d',
+  '30d': '30d',
+  '3m': '3m',
+  '6m': '6m',
+  '12m': '12m',
+  custom: 'custom',
+} as const;
+
+export type EvalTaskUpdateRequestApiFiltersFiltersItemFilterConfig = {
+  /** Canonical field type, for example text, number, boolean, datetime, categorical, thumbs, annotator, or array. */
+  filter_type: string;
+  /** Canonical operator from api_contracts/filter_contract.json, for example equals, not_equals, in, not_in, between, not_between, is_null, or is_not_null. */
+  filter_op: string;
+  /** Scalar, list, range tuple, boolean, or null depending on filter_op and filter_type. */
+  filter_value?: unknown;
+  /** Column family such as SYSTEM_METRIC, SPAN_ATTRIBUTE, EVAL_METRIC, ANNOTATION, or NORMAL. */
+  col_type?: string;
+};
+
+export type EvalTaskUpdateRequestApiFiltersFiltersItem = {
+  /** Column or attribute id to filter on. */
+  column_id: string;
+  /** Optional UI label for chips and saved views. */
+  display_name?: string;
+  /** Optional source surface for mixed-source filters, for example traces, datasets, or simulation. */
+  source?: string;
+  /** Optional metric output type metadata used by eval and annotation filters. */
+  output_type?: string;
+  filter_config: EvalTaskUpdateRequestApiFiltersFiltersItemFilterConfig;
+};
+
 export type EvalTaskUpdateRequestApiFiltersSpanAttributesFiltersItemFilterConfig = {
   /** Canonical field type, for example text, number, boolean, datetime, categorical, thumbs, annotator, or array. */
   filter_type: string;
@@ -18781,6 +19730,8 @@ export type EvalTaskUpdateRequestApiFilters = {
      * @maxItems 2
      */
   date_range?: string[];
+  /** Which time-window preset the user chose. The frontend resolves it to date_range at save time; this records the intent so a relative window can be re-anchored on the next save. Never read when building a query — date_range remains authoritative. Absent on tasks predating this field. The enum documents the accepted values; it is not enforced. */
+  date_preset?: EvalTaskUpdateRequestApiFiltersDatePreset;
   /** Lower-bound ISO timestamp for legacy task filters. */
   created_at?: string;
   /** Trace session id(s) to constrain the task. */
@@ -18791,6 +19742,7 @@ export type EvalTaskUpdateRequestApiFilters = {
   span_id?: string[];
   /** Observation span type(s), for example llm, tool, or chain. */
   observation_type?: string[];
+  filters?: EvalTaskUpdateRequestApiFiltersFiltersItem[];
   span_attributes_filters?: EvalTaskUpdateRequestApiFiltersSpanAttributesFiltersItem[];
 };
 
@@ -19488,6 +20440,7 @@ export type VerifyApiKeyRequestApiProvider = typeof VerifyApiKeyRequestApiProvid
 export const VerifyApiKeyRequestApiProvider = {
   vapi: 'vapi',
   retell: 'retell',
+  bland: 'bland',
 } as const;
 
 export interface VerifyApiKeyRequestApi {
@@ -19508,6 +20461,7 @@ export type VerifyAssistantIdRequestApiProvider = typeof VerifyAssistantIdReques
 export const VerifyAssistantIdRequestApiProvider = {
   vapi: 'vapi',
   retell: 'retell',
+  bland: 'bland',
 } as const;
 
 export interface VerifyAssistantIdRequestApi {
@@ -19729,6 +20683,13 @@ export interface ObserveGraphDataResultApi {
 export interface ObserveGraphDataResponseApi {
   status?: boolean;
   result: ObserveGraphDataResultApi;
+}
+
+export type RootSpansResponseApiResult = {[key: string]: string};
+
+export interface RootSpansResponseApi {
+  status?: boolean;
+  result: RootSpansResponseApiResult;
 }
 
 export type ProjectVersionApiMetadata = { [key: string]: unknown };
@@ -20875,6 +21836,66 @@ export interface TraceApi {
   tags?: TraceApiTags;
 }
 
+export interface TraceObserveListMetadataApi {
+  total_rows: number;
+}
+
+/**
+ * Any valid JSON value.
+ */
+export type TraceObserveColumnConfigApiSettings = { [key: string]: unknown };
+
+/**
+ * Any valid JSON value.
+ */
+export type TraceObserveColumnConfigApiChoicesMap = { [key: string]: unknown };
+
+/**
+ * Any valid JSON value.
+ */
+export type TraceObserveColumnConfigApiAnnotators = { [key: string]: unknown };
+
+export interface TraceObserveColumnConfigApi {
+  /** @minLength 1 */
+  id: string;
+  /** @minLength 1 */
+  name: string;
+  is_visible: boolean;
+  /** @minLength 1 */
+  group_by?: string;
+  /** @minLength 1 */
+  output_type?: string;
+  reverse_output?: boolean;
+  /** @minLength 1 */
+  annotation_label_type?: string;
+  choices?: string[];
+  /** Any valid JSON value. */
+  settings?: TraceObserveColumnConfigApiSettings;
+  /** Any valid JSON value. */
+  choices_map?: TraceObserveColumnConfigApiChoicesMap;
+  /** @minLength 1 */
+  eval_template_id?: string;
+  /** Any valid JSON value. */
+  annotators?: TraceObserveColumnConfigApiAnnotators;
+  /** @minLength 1 */
+  source_field?: string;
+  /** @minLength 1 */
+  parent_eval_id?: string;
+}
+
+export type TraceObserveListResultApiTableItem = {[key: string]: { [key: string]: unknown }};
+
+export interface TraceObserveListResultApi {
+  metadata: TraceObserveListMetadataApi;
+  table: TraceObserveListResultApiTableItem[];
+  config: TraceObserveColumnConfigApi[];
+}
+
+export interface TraceObserveListResponseApi {
+  status: boolean;
+  result: TraceObserveListResultApi;
+}
+
 export type TraceDetailResultApiTrace = { [key: string]: unknown };
 
 export type TraceDetailResultApiObservationSpansItem = { [key: string]: unknown };
@@ -21025,8 +22046,8 @@ export interface UserAlertMonitorApi {
   readonly metric_name?: string;
   readonly created_at?: string;
   readonly updated_at?: string;
-  deleted?: boolean;
-  deleted_at?: string;
+  readonly deleted?: boolean;
+  readonly deleted_at?: string;
   metric_type: UserAlertMonitorApiMetricType;
   /**
      * Id of the evaluation template.
@@ -21058,14 +22079,14 @@ export interface UserAlertMonitorApi {
      */
   auto_threshold_time_window?: number;
   /** The last time the monitor was checked for alerts. */
-  last_checked_at?: string;
+  readonly last_checked_at?: string;
   notification_emails?: string[];
   /** @maxLength 200 */
   slack_webhook_url?: string;
   slack_notes?: string;
   is_mute?: boolean;
   filters?: UserAlertMonitorApiFilters;
-  logs?: UserAlertMonitorApiLogsItem[];
+  readonly logs?: readonly UserAlertMonitorApiLogsItem[];
   organization: string;
   workspace?: string;
   created_by?: string;
@@ -21160,8 +22181,8 @@ export interface UserAlertMonitorPreviewGraphApi {
   readonly metric_name?: string;
   readonly created_at?: string;
   readonly updated_at?: string;
-  deleted?: boolean;
-  deleted_at?: string;
+  readonly deleted?: boolean;
+  readonly deleted_at?: string;
   metric_type: UserAlertMonitorPreviewGraphApiMetricType;
   /**
      * Id of the evaluation template.
@@ -21193,14 +22214,14 @@ export interface UserAlertMonitorPreviewGraphApi {
      */
   auto_threshold_time_window?: number;
   /** The last time the monitor was checked for alerts. */
-  last_checked_at?: string;
+  readonly last_checked_at?: string;
   notification_emails?: string[];
   /** @maxLength 200 */
   slack_webhook_url?: string;
   slack_notes?: string;
   is_mute?: boolean;
   filters?: UserAlertMonitorPreviewGraphApiFilters;
-  logs?: UserAlertMonitorPreviewGraphApiLogsItem[];
+  readonly logs?: readonly UserAlertMonitorPreviewGraphApiLogsItem[];
   organization: string;
   workspace?: string;
   created_by?: string;
@@ -21557,96 +22578,6 @@ export interface DownloadInvoiceResponseApi {
   result: DownloadInvoiceResultApi;
 }
 
-export type EELicenseGrantApiBand = typeof EELicenseGrantApiBand[keyof typeof EELicenseGrantApiBand];
-
-
-export const EELicenseGrantApiBand = {
-  team: 'team',
-  business: 'business',
-  enterprise: 'enterprise',
-  enterprise_plus: 'enterprise_plus',
-} as const;
-
-export interface EELicenseGrantApi {
-  id: string;
-  /** @minLength 1 */
-  customer_name: string;
-  band: EELicenseGrantApiBand;
-  /** @minLength 1 */
-  billing_interval: string;
-  features: string[];
-  max_traces_monthly?: number;
-  max_gateway_monthly?: number;
-  issued_at: string;
-  expires_at: string;
-  /** @minLength 1 */
-  status: string;
-}
-
-export interface EELicenseListResultApi {
-  licenses: EELicenseGrantApi[];
-}
-
-export interface EELicenseListResponseApi {
-  status: boolean;
-  result: EELicenseListResultApi;
-}
-
-export type EELicenseCreateRequestApiBand = typeof EELicenseCreateRequestApiBand[keyof typeof EELicenseCreateRequestApiBand];
-
-
-export const EELicenseCreateRequestApiBand = {
-  team: 'team',
-  business: 'business',
-  enterprise: 'enterprise',
-  enterprise_plus: 'enterprise_plus',
-} as const;
-
-export type EELicenseCreateRequestApiBillingInterval = typeof EELicenseCreateRequestApiBillingInterval[keyof typeof EELicenseCreateRequestApiBillingInterval];
-
-
-export const EELicenseCreateRequestApiBillingInterval = {
-  monthly: 'monthly',
-  yearly: 'yearly',
-} as const;
-
-export interface EELicenseCreateRequestApi {
-  band: EELicenseCreateRequestApiBand;
-  customer_name?: string;
-  billing_interval?: EELicenseCreateRequestApiBillingInterval;
-}
-
-export interface EELicenseCreateResultApi {
-  grant_id: string;
-  /** @minLength 1 */
-  jwt_key: string;
-  /** @minLength 1 */
-  key_hash: string;
-  /** @minLength 1 */
-  band: string;
-  expires_at: string;
-  features: string[];
-}
-
-export interface EELicenseCreateResponseApi {
-  status: boolean;
-  result: EELicenseCreateResultApi;
-}
-
-export interface EELicenseRevokeRequestApi {
-  reason?: string;
-}
-
-export interface EELicenseRevokeResultApi {
-  revoked: boolean;
-  grant_id: string;
-}
-
-export interface EELicenseRevokeResponseApi {
-  status: boolean;
-  result: EELicenseRevokeResultApi;
-}
-
 export interface AutoReloadSettingsDataApi {
   autoreload_enabled: boolean;
   autoreload_wallet_amount: string;
@@ -21776,6 +22707,7 @@ export type UsageOrganizationSubscriptionApiStatus = typeof UsageOrganizationSub
 export const UsageOrganizationSubscriptionApiStatus = {
   active: 'active',
   past_due: 'past_due',
+  unpaid: 'unpaid',
   canceled: 'canceled',
   inactive: 'inactive',
 } as const;
@@ -21852,6 +22784,7 @@ export type UsageOrganizationSubscriptionCreateApiStatus = typeof UsageOrganizat
 export const UsageOrganizationSubscriptionCreateApiStatus = {
   active: 'active',
   past_due: 'past_due',
+  unpaid: 'unpaid',
   canceled: 'canceled',
   inactive: 'inactive',
 } as const;
@@ -22670,9 +23603,235 @@ export interface UsageWorkspaceBreakdownResponseApi {
   result: UsageWorkspaceBreakdownResultApi;
 }
 
-export interface StripeWebhookLegacyResponseApi {
-  status: boolean;
-  result?: StripeWebhookResultApi;
+export type HeartbeatApiUsageData = {[key: string]: string};
+
+export interface HeartbeatApi {
+  instance_id: string;
+  /**
+     * @minLength 1
+     * @pattern ^lic_[A-Za-z0-9_-]{1,60}$
+     */
+  license_id: string;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  version?: string;
+  /**
+     * @minLength 1
+     * @maxLength 50
+     */
+  deployment_type?: string;
+  timestamp: string;
+  /**
+     * @minLength 1
+     * @pattern ^[A-Za-z0-9_-]{16,64}$
+     */
+  nonce: string;
+  /** @minimum 0 */
+  sequence: number;
+  usage_data?: HeartbeatApiUsageData;
+}
+
+export type EnterpriseHeartbeatResponseApiStatus = typeof EnterpriseHeartbeatResponseApiStatus[keyof typeof EnterpriseHeartbeatResponseApiStatus];
+
+
+export const EnterpriseHeartbeatResponseApiStatus = {
+  accepted: 'accepted',
+  ignored: 'ignored',
+  rejected: 'rejected',
+} as const;
+
+export interface EnterpriseHeartbeatResponseApi {
+  status: EnterpriseHeartbeatResponseApiStatus;
+  /** @minLength 1 */
+  reason?: string;
+  /** @minLength 1 */
+  grant_status?: string;
+  expires_at?: string;
+  /** @minLength 1 */
+  renewal_notice?: string;
+}
+
+export type CreateGrantApiLicenseType = typeof CreateGrantApiLicenseType[keyof typeof CreateGrantApiLicenseType];
+
+
+export const CreateGrantApiLicenseType = {
+  production: 'production',
+  trial: 'trial',
+} as const;
+
+export type CreateGrantApiLimits = {[key: string]: number};
+
+export interface CreateGrantApi {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  customer_name: string;
+  /**
+     * @minLength 1
+     * @maxLength 64
+     */
+  customer_id?: string;
+  /** @minLength 1 */
+  primary_contact_email?: string;
+  /**
+     * @minLength 1
+     * @maxLength 128
+     */
+  hubspot_deal_id?: string;
+  license_type: CreateGrantApiLicenseType;
+  /**
+     * @minLength 1
+     * @maxLength 64
+     */
+  band: string;
+  features?: string[];
+  limits?: CreateGrantApiLimits;
+  /** @minimum 1 */
+  max_instances?: number;
+  /**
+     * @minLength 1
+     * @maxLength 32
+     */
+  min_software_version?: string;
+  not_before?: string;
+  expires_at: string;
+  /** @minimum 0 */
+  grace_days?: number;
+}
+
+export type LicenseGrantApiLicenseType = typeof LicenseGrantApiLicenseType[keyof typeof LicenseGrantApiLicenseType];
+
+
+export const LicenseGrantApiLicenseType = {
+  production: 'production',
+  trial: 'trial',
+} as const;
+
+export type LicenseGrantApiFeatures = { [key: string]: unknown };
+
+export type LicenseGrantApiLimits = { [key: string]: unknown };
+
+export type LicenseGrantApiStatus = typeof LicenseGrantApiStatus[keyof typeof LicenseGrantApiStatus];
+
+
+export const LicenseGrantApiStatus = {
+  draft: 'draft',
+  pending_approval: 'pending_approval',
+  active: 'active',
+  suspended: 'suspended',
+  revoked: 'revoked',
+  expired: 'expired',
+} as const;
+
+export interface LicenseGrantApi {
+  readonly id?: string;
+  /** @minLength 1 */
+  readonly license_id?: string;
+  /** @minLength 1 */
+  readonly key_id?: string;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  customer_name: string;
+  /** @maxLength 64 */
+  customer_id?: string;
+  /** @maxLength 254 */
+  primary_contact_email?: string;
+  /** @maxLength 128 */
+  hubspot_deal_id?: string;
+  license_type: LicenseGrantApiLicenseType;
+  /**
+     * @minLength 1
+     * @maxLength 64
+     */
+  band: string;
+  features?: LicenseGrantApiFeatures;
+  limits?: LicenseGrantApiLimits;
+  /**
+     * @minimum -2147483648
+     * @maximum 2147483647
+     */
+  max_instances?: number;
+  /** @maxLength 32 */
+  min_software_version?: string;
+  readonly issued_at?: string;
+  not_before?: string;
+  expires_at?: string;
+  /**
+     * @minimum -2147483648
+     * @maximum 2147483647
+     */
+  grace_days?: number;
+  readonly status?: LicenseGrantApiStatus;
+  /** @maxLength 255 */
+  status_reason?: string;
+  readonly status_changed_at?: string;
+  readonly drafted_by?: string;
+  readonly approved_by?: string;
+  readonly approved_at?: string;
+  readonly authorization_version?: number;
+  readonly created_at?: string;
+  readonly updated_at?: string;
+}
+
+export interface LicenseActionRequestApi { [key: string]: unknown }
+
+export interface IssuedLicenseResponseApi {
+  grant: LicenseGrantApi;
+  /** @minLength 1 */
+  license_key: string;
+}
+
+export type UpdateStatusApiStatus = typeof UpdateStatusApiStatus[keyof typeof UpdateStatusApiStatus];
+
+
+export const UpdateStatusApiStatus = {
+  active: 'active',
+  suspended: 'suspended',
+  revoked: 'revoked',
+} as const;
+
+export interface UpdateStatusApi {
+  status: UpdateStatusApiStatus;
+  /** @maxLength 255 */
+  reason?: string;
+}
+
+export interface ActivationRequestApi {
+  instance_id: string;
+  /** @maxLength 100 */
+  version?: string;
+  /** @maxLength 50 */
+  deployment_type?: string;
+  /**
+     * @minLength 1
+     * @pattern ^[0-9a-f]{64}$
+     */
+  license_key_hash?: string;
+}
+
+export type ActivationResponseApiScope = typeof ActivationResponseApiScope[keyof typeof ActivationResponseApiScope];
+
+
+export const ActivationResponseApiScope = {
+  oss: 'oss',
+  enterprise: 'enterprise',
+} as const;
+
+export interface ActivationResponseApi {
+  /** @minLength 1 */
+  gateway_url: string;
+  /** @minLength 1 */
+  access_token: string;
+  /** @minimum 0 */
+  expires_in: number;
+  allowed_services: string[];
+  allowed_models: string[];
+  scope: ActivationResponseApiScope;
 }
 
 export type AccountsAwsMarketplaceLaunchSoftwareCreateBody = {
@@ -23904,6 +25063,36 @@ export type ModelHubEvalGroupsList200 = {
   results: EvalGroupApi[];
 };
 
+export type ModelHubEvalTemplatesUsageListParams = {
+/**
+ * @minimum 0
+ * @maximum 10000
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+page_size?: number;
+period?: ModelHubEvalTemplatesUsageListPeriod;
+start_date?: string;
+end_date?: string;
+};
+
+export type ModelHubEvalTemplatesUsageListPeriod = typeof ModelHubEvalTemplatesUsageListPeriod[keyof typeof ModelHubEvalTemplatesUsageListPeriod];
+
+
+export const ModelHubEvalTemplatesUsageListPeriod = {
+  '30m': '30m',
+  '6h': '6h',
+  '1d': '1d',
+  '7d': '7d',
+  '30d': '30d',
+  '90d': '90d',
+  '180d': '180d',
+  '365d': '365d',
+} as const;
+
 export type ModelHubExperimentDetailListParams = {
 /**
  * A search term.
@@ -24013,13 +25202,6 @@ page?: number;
 limit?: number;
 };
 
-export type ModelHubFeedbackGetFeedbackDetails200 = {
-  count: number;
-  next?: string;
-  previous?: string;
-  results: FeedbackApi[];
-};
-
 export type ModelHubFeedbackGetFeedbackSummaryParams = {
 /**
  * A page number within the paginated result set.
@@ -24047,13 +25229,6 @@ page?: number;
  * Number of results to return per page.
  */
 limit?: number;
-};
-
-export type ModelHubFeedbackGetTemplate200 = {
-  count: number;
-  next?: string;
-  previous?: string;
-  results: FeedbackApi[];
 };
 
 export type ModelHubGetEvalConfigListParams = {
@@ -24942,6 +26117,11 @@ export type SimulateApiAgentPromptOptimiserList200 = {
   next?: string;
   previous?: string;
   results: AgentPromptOptimiserRunListApi[];
+};
+
+export type SimulateApiAlkSimulateCallExecutionsRecordingUploadBody = {
+  file: Blob;
+  filename?: string;
 };
 
 export type SimulateApiCallExecutionsListParams = {
@@ -25868,13 +27048,8 @@ page?: number;
  * Number of results to return per page.
  */
 limit?: number;
-};
-
-export type TracerObservationSpanRootSpans200 = {
-  count: number;
-  next?: string;
-  previous?: string;
-  results: ObservationSpanApi[];
+trace_ids: string[];
+project_ids?: string[];
 };
 
 export type TracerProjectVersionListParams = {
@@ -26411,13 +27586,6 @@ page_number?: number;
  */
 page_size?: number;
 interval?: string;
-};
-
-export type TracerTraceListTracesOfSession200 = {
-  count: number;
-  next?: string;
-  previous?: string;
-  results: TraceApi[];
 };
 
 export type TracerTraceListVoiceCallsParams = {

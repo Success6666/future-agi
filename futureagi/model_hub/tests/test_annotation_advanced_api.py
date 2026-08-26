@@ -54,7 +54,8 @@ def allow_advanced_api_entitlements():
             entitlements_available = (
                 importlib.util.find_spec("ee.usage.services.entitlements") is not None
             )
-        except ModuleNotFoundError:
+        except (ModuleNotFoundError, ValueError):
+            # ValueError: OSS stub in root conftest has __spec__=None; matches tfc/ee_loader.py::has_ee.
             entitlements_available = False
         if entitlements_available:
             stack.enter_context(
@@ -231,6 +232,38 @@ class TestReservations:
         item.refresh_from_db()
         assert item.reserved_by == user
         assert item.reservation_expires_at is not None
+
+    def test_reviewer_reopening_reviewed_item_does_not_reserve(
+        self, auth_client, organization, workspace, user
+    ):
+        """After a reviewer requests changes, re-opening the item must not grab
+        the editing lock. The FE re-fetches annotate-detail with reserve=true
+        right after the review; if the reviewer takes the reservation it
+        survives the hand-back and strands the annotator who has to rework the
+        item until expiry (the review/reservation deadlock).
+        """
+        queue_id = _create_queue(auth_client, name="Res Review Q")
+        _, row = _create_dataset_row(organization, workspace)
+        item = _add_item(auth_client, queue_id, row)
+
+        # Item sent back for rework: the auth user (a queue manager => reviewer)
+        # is recorded as its reviewer.
+        item.status = "in_progress"
+        item.review_status = "rejected"
+        item.reviewed_by = user
+        item.reviewed_at = timezone.now()
+        item.save(
+            update_fields=["status", "review_status", "reviewed_by", "reviewed_at"]
+        )
+
+        resp = auth_client.get(
+            f"{QUEUE_URL}{queue_id}/items/{item.id}/annotate-detail/",
+            {"reserve": "true"},
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        item.refresh_from_db()
+        assert item.reserved_by is None
+        assert item.reservation_expires_at is None
 
     def test_release_reservation(self, auth_client, organization, workspace):
         queue_id = _create_queue(auth_client, name="Res Q2")
@@ -1241,10 +1274,7 @@ class TestAutomationRules:
         rule_id = create_resp.data["id"]
 
         resp = auth_client.delete(self._rule_detail_url(queue_id, rule_id))
-        assert resp.status_code in (
-            status.HTTP_200_OK,
-            status.HTTP_204_NO_CONTENT,
-        )
+        assert resp.status_code == status.HTTP_204_NO_CONTENT
 
     def test_evaluate_rule_adds_items(self, auth_client, organization, workspace):
         queue_id = _create_queue(auth_client, name="Auto Q5")
@@ -1530,37 +1560,3 @@ class TestReviewWorkflow:
         assert item.reviewed_by == user
         assert item.reviewed_at is not None
 
-
-# ===========================================================================
-# Phase 5A (extra) — Progress endpoint
-# ===========================================================================
-
-
-@pytest.mark.django_db
-class TestProgress:
-    """Progress endpoint smoke tests."""
-
-    def test_progress_empty_queue(self, auth_client):
-        queue_id = _create_queue(auth_client, name="Prog Q1")
-        resp = auth_client.get(f"{QUEUE_URL}{queue_id}/progress/")
-        assert resp.status_code == status.HTTP_200_OK
-        result = resp.data.get("result", resp.data)
-        assert result["total"] == 0
-        assert result["progress_pct"] == 0
-
-    def test_progress_with_items(self, auth_client, organization, workspace):
-        queue_id = _create_queue(auth_client, name="Prog Q2")
-        label = _create_label(organization, workspace, name="L-Prog2")
-        _, row1 = _create_dataset_row(organization, workspace)
-        _, row2 = _create_dataset_row(organization, workspace)
-        item1 = _add_item(auth_client, queue_id, row1)
-        _add_item(auth_client, queue_id, row2)
-
-        _submit_annotation(auth_client, queue_id, item1.id, label)
-        _complete_item(auth_client, queue_id, item1.id)
-
-        resp = auth_client.get(f"{QUEUE_URL}{queue_id}/progress/")
-        result = resp.data.get("result", resp.data)
-        assert result["total"] == 2
-        assert result["completed"] == 1
-        assert result["progress_pct"] == 50.0

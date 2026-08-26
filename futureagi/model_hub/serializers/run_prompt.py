@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from model_hub.models.api_key import ApiKey
-from tfc.utils.serializer_fields import JsonValueField
+from tfc.utils.serializer_fields import JsonValueField, StringOrObjectField
 
 
 class ApiKeyCreateSerializer(serializers.Serializer):
@@ -127,9 +127,12 @@ class LitellmSerializer(serializers.Serializer):
         default=None,
         help_text="Controls diversity via nucleus sampling. Value between 0 and 1.",
     )
-    response_format = serializers.JSONField(
+    response_format = StringOrObjectField(
         required=False,
-        help_text="JSON schema for response format if required. Defaults to None.",
+        help_text=(
+            "Response format: a string (e.g. 'text', 'json_object') or a JSON "
+            "schema object. Defaults to None."
+        ),
     )
     tool_choice = serializers.ChoiceField(
         choices=["auto", "required", None],
@@ -165,8 +168,12 @@ class PromptConfigSerializer(serializers.Serializer):
     model = serializers.CharField(max_length=255, required=False, allow_blank=True)
     # Free-form config: values are mixed JSON (model_name str, isAvailable
     # bool, booleans/dropdowns objects, …). Use JsonValueField so the contract
-    # doesn't constrain every value to a string.
-    run_prompt_config = serializers.DictField(child=JsonValueField(), required=False)
+    # doesn't constrain every value to a string. allow_null because the FE
+    # sends null for unset model params (temperature, top_p, …) meaning "use
+    # provider default" — JSONField's default allow_null=False would 400 them.
+    run_prompt_config = serializers.DictField(
+        child=JsonValueField(allow_null=True), required=False
+    )
     messages = serializers.ListField(
         # content can be a string or a list of typed parts — keep values open.
         child=serializers.DictField(child=JsonValueField()),
@@ -208,10 +215,13 @@ class PromptConfigSerializer(serializers.Serializer):
         allow_null=True,
         help_text="Controls diversity via nucleus sampling. Value between 0 and 1.",
     )
-    response_format = JsonValueField(
+    response_format = StringOrObjectField(
         required=False,
         allow_null=True,
-        help_text="JSON schema for response format if required. Can be a JSON object or string. Defaults to None.",
+        help_text=(
+            "Response format: a string (e.g. 'text', 'json_object') or a JSON "
+            "schema object. Defaults to None."
+        ),
     )
     tool_choice = serializers.ChoiceField(
         choices=["auto", "required", None],
@@ -320,11 +330,14 @@ class PromptConfigSerializer(serializers.Serializer):
         if item_type == "text":
             return bool(item.get("text", "").strip())
         elif item_type == "image_url":
-            return bool(item.get("imageUrl", {}).get("url", "").strip())
+            outer = item.get("image_url") or item.get("imageUrl") or {}
+            return bool(outer.get("url", "").strip())
         elif item_type == "audio_url":
-            return bool(item.get("audioUrl", {}).get("url", "").strip())
+            outer = item.get("audio_url") or item.get("audioUrl") or {}
+            return bool(outer.get("url", "").strip())
         elif item_type == "pdf_url":
-            return bool(item.get("pdfUrl", {}).get("url", "").strip())
+            outer = item.get("pdf_url") or item.get("pdfUrl") or {}
+            return bool(outer.get("url", "").strip())
         return False
 
     def validate(self, attrs):

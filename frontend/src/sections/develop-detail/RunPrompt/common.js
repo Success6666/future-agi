@@ -1,6 +1,7 @@
 import _ from "lodash";
 import { normalizeForComparison } from "src/sections/workbench/createPrompt/Playground/common";
 import { getRandomId } from "src/utils/utils";
+import { canonicalResponseFormat } from "src/utils/responseFormat";
 import { z } from "zod";
 
 function getIdFromObject(obj) {
@@ -67,26 +68,17 @@ export const transformDefaultData = (editConfigData, allColumns) => {
           };
         }
 
-        // Handle media content (image, pdf, audio) with nested keys
-        const mediaTypes = {
-          image_url: "imageUrl",
-          pdf_url: "pdfUrl",
-          audio_url: "audioUrl",
-        };
-
-        if (mediaTypes[part?.type] && part[mediaTypes[part?.type]]) {
-          const original = part?.[mediaTypes?.[part?.type]];
-          const converted = Object?.fromEntries(
-            Object.entries(original)?.map(([key, value]) => [
+        const MEDIA_TYPES = ["image_url", "pdf_url", "audio_url"];
+        if (MEDIA_TYPES.includes(part?.type) && part[part.type]) {
+          const original = part[part.type];
+          const converted = Object.fromEntries(
+            Object.entries(original).map(([key, value]) => [
               _.snakeCase(key),
               value,
             ]),
           );
 
-          return {
-            ...part,
-            [mediaTypes[part.type]]: converted,
-          };
+          return { ...part, [part.type]: converted };
         }
 
         return part;
@@ -137,11 +129,13 @@ export const transformDefaultData = (editConfigData, allColumns) => {
   const resolvedModelType =
     runPromptConfig?.model_type || runPromptConfig?.modelType;
 
+  // Prompts saved elsewhere store the backend's `json` spelling; map it onto
+  // the menu's `json_object` row.
   const rawResponseFormat = editConfigData?.response_format;
   const resolvedResponseFormat =
     typeof rawResponseFormat === "object"
       ? rawResponseFormat?.name ?? "text"
-      : rawResponseFormat ?? "text";
+      : canonicalResponseFormat(rawResponseFormat ?? "text");
 
   let voiceInputColumn = "";
   if (resolvedModelType === MODEL_TYPES.STT) {
@@ -533,7 +527,7 @@ export const TextContent = z.object({
 
 export const ImageContent = z.object({
   type: z.literal("image_url"),
-  imageUrl: z.object({
+  image_url: z.object({
     img_name: z.string().optional(),
     url: z.string(),
     img_size: z.number().optional(),
@@ -542,7 +536,7 @@ export const ImageContent = z.object({
 
 export const PdfContent = z.object({
   type: z.literal("pdf_url"),
-  pdfUrl: z.object({
+  pdf_url: z.object({
     pdf_name: z.string().optional(),
     file_name: z.string().optional(),
     url: z.string(),
@@ -552,7 +546,7 @@ export const PdfContent = z.object({
 
 export const AudioContent = z.object({
   type: z.literal("audio_url"),
-  audioUrl: z.object({
+  audio_url: z.object({
     audio_name: z.string().optional(),
     url: z.string(),
     audio_size: z.number().optional(),

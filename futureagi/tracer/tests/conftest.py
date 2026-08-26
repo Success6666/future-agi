@@ -32,6 +32,41 @@ from tracer.tests._ch_seed import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _stub_eval_task_workflow(monkeypatch):
+    """Keep eval-task create/edit views and tools from connecting to Temporal."""
+
+    def _fake_start(task, **kwargs):
+        return f"eval-task-{task.id}"
+
+    monkeypatch.setattr(
+        "tfc.temporal.eval_tasks.client.start_eval_task_workflow_sync",
+        _fake_start,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "tracer.views.eval_task.start_eval_task_workflow_sync",
+        _fake_start,
+        raising=False,
+    )
+
+    # pause_eval_task fires a best-effort Temporal signal; stub it too so the
+    # view doesn't try to reach the Temporal server in tests.
+    def _fake_signal(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "tfc.temporal.eval_tasks.client.signal_pause_eval_task_workflow",
+        _fake_signal,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "tracer.views.eval_task.signal_pause_eval_task_workflow",
+        _fake_signal,
+        raising=False,
+    )
+
+
 @pytest.fixture
 def ch_seed():
     """Seed ObservationSpan rows directly into the CH ``spans`` table.

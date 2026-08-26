@@ -272,7 +272,6 @@ export const useUpdateAnnotationQueue = () => {
       enqueueSnackbar("Queue updated successfully", { variant: "success" });
       queryClient.invalidateQueries({ queryKey: annotationQueueKeys.all });
       queryClient.invalidateQueries({
-
         queryKey: annotationQueueKeys.detail(variables.id),
       });
     },
@@ -431,10 +430,12 @@ export const useQueueItems = (queueId, filters = {}, options = {}) => {
 export const useAddQueueItems = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ queueId, items, selection }) =>
+    mutationFn: ({ queueId, items, selection, project_id }) =>
       axios.post(
         annotationQueueEndpoints.addItems(queueId),
-        selection ? { selection } : { items },
+        selection
+          ? { selection }
+          : { items, ...(project_id ? { project_id } : {}) },
       ),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({
@@ -638,6 +639,8 @@ const patchAssignmentCacheValue = (value, variables) => {
 export const useAssignQueueItems = () => {
   const queryClient = useQueryClient();
   return useMutation({
+    // Own the error toast here so the global handler (app.jsx) doesn't also fire one.
+    meta: { errorHandled: true },
     mutationFn: ({ queueId, itemIds, userIds, action }) => {
       const normalizedUserIds = userIds ?? [];
       return axios.post(annotationQueueEndpoints.assignItems(queueId), {
@@ -704,14 +707,16 @@ export const useAssignQueueItems = () => {
         queryKey: annotationQueueKeys.progress(variables.queueId),
       });
     },
-    onError: (_error, _variables, context) => {
+    onError: (error, _variables, context) => {
       context?.previousQueueItems?.forEach(([queryKey, data]) => {
         queryClient.setQueryData(queryKey, data);
       });
       context?.previousDetails?.forEach(([queryKey, data]) => {
         queryClient.setQueryData(queryKey, data);
       });
-      enqueueSnackbar("Failed to assign items", { variant: "error" });
+      enqueueSnackbar(extractErrorMessage(error, "Failed to assign items"), {
+        variant: "error",
+      });
     },
   });
 };
