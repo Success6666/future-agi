@@ -21,6 +21,7 @@ from model_hub.models.ai_model import AIModel
 from model_hub.models.choices import StatusType
 from model_hub.models.custom_models import CustomAIModel
 from model_hub.models.evals_metric import EvalTemplate
+from model_hub.utils.eval_mapping import require_mapping_paths
 from tfc.utils.storage import upload_audio_to_s3, upload_image_to_s3, upload_video_to_s3
 from tracer.models.custom_eval_config import CustomEvalConfig
 from tracer.models.observation_span import ObservationSpan, UserIdType
@@ -1215,6 +1216,12 @@ def _process_eval_tags(eval_tags, project):
             except json.JSONDecodeError as e:
                 logger.exception(f"Invalid JSON format for mapping: {str(e)}")
                 raise Exception(f"Invalid JSON format for mapping: {str(e)}") from e
+
+        # Third write path into CustomEvalConfig.mapping, and the only one that
+        # takes the values straight off the wire. Refuse a non-path value here
+        # rather than in _create_custom_eval_configs, so nothing is created for
+        # the whole batch when one tag is malformed.
+        require_mapping_paths(mapping, f"eval tag '{custom_eval_name}'")
 
         processed_eval_tags.append(
             {

@@ -585,3 +585,51 @@ class TestScanEvalMappingPathsCommand:
         output = self._scan(project_id=str(uuid.uuid4()))
 
         assert "affected_eval_configs=0" in output
+
+
+@pytest.mark.integration
+class TestEvalTagIngestMappingValues:
+    """The OTEL eval-tag path writes CustomEvalConfig.mapping straight from the
+    wire via get_or_create, bypassing both the serializer and the eval-group
+    helper. It is the only write path a customer's SDK reaches directly."""
+
+    def _tag(self, mapping, eval_template):
+        return [
+            {
+                "custom_eval_name": "release-tag-eval",
+                "eval_name": eval_template.name,
+                "mapping": mapping,
+            }
+        ]
+
+    def test_object_mapping_value_is_refused_before_a_config_is_created(
+        self, project, eval_template
+    ):
+        from tracer.utils.otel import _process_eval_tags
+
+        with pytest.raises(ValueError, match="must be an attribute path string"):
+            _process_eval_tags(
+                self._tag({"input": {"path": "input"}, "output": "output"}, eval_template),
+                project,
+            )
+        assert not CustomEvalConfig.objects.filter(name="release-tag-eval").exists()
+
+    def test_path_string_mapping_values_pass_through(self, project, eval_template):
+        from tracer.utils.otel import _process_eval_tags
+
+        processed = _process_eval_tags(
+            self._tag({"input": "input.value", "output": "output"}, eval_template),
+            project,
+        )
+
+        assert processed[0]["mapping"] == {"input": "input.value", "output": "output"}
+
+    def test_json_string_mapping_is_parsed_then_checked(self, project, eval_template):
+        from tracer.utils.otel import _process_eval_tags
+
+        # The wire form is often a JSON string; the guard must run after the parse.
+        with pytest.raises(ValueError, match="must be an attribute path string"):
+            _process_eval_tags(
+                self._tag(json.dumps({"input": {"path": "input"}}), eval_template),
+                project,
+            )
