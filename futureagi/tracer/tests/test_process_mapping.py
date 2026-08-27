@@ -394,6 +394,27 @@ def test_object_mapping_value_fails_session_mapping_as_value_error(
     ) == {"prompt": "Test Session"}
 
 
+# The shape the reporting customer actually saved, quoted from their own report:
+#   generated_value: {"source": "span_attribute", "column_id": "output.value"}
+# Their 31 rows all failed with "'dict' object has no attribute 'startswith'",
+# which is _heavy_span_ids_for_trace_mapping scanning raw mapping values before
+# the resolver binds to a span -- hence trace_id/span_id/session_id all null.
+CUSTOMER_MAPPING_VALUE = {"source": "span_attribute", "column_id": "output.value"}
+
+
+def test_customer_mapping_shape_fails_before_the_heavy_span_scan(
+    trace, eval_template, mocker
+):
+    mocker.patch(
+        "tracer.services.clickhouse.v2.eval_loader._read_source",
+        return_value="clickhouse",
+    )
+    with pytest.raises(ValueError, match="must be an attribute path string"):
+        resolve_trace_mapping_lean_first(
+            {"generated_value": CUSTOMER_MAPPING_VALUE}, trace, eval_template.id
+        )
+
+
 def test_object_mapping_value_fails_lean_first_trace_path(trace, eval_template, mocker):
     mocker.patch(
         "tracer.services.clickhouse.v2.eval_loader._read_source",
