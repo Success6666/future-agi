@@ -17,6 +17,7 @@ from accounts.models.workspace import Workspace
 # ClickHouse client warms up at startup. Keep it lazy.
 from agentic_eval.core_evals.fi_evals import *  # noqa: F403
 from common.utils.data_injection import normalize as _di_normalize
+from model_hub.utils.eval_mapping import require_mapping_paths
 from model_hub.models.choices import StatusType
 from model_hub.models.evals_metric import EvalTemplate
 from sdk.utils.helpers import _get_api_call_type
@@ -559,17 +560,12 @@ class EvalSkippedMissingAttribute(ValueError):
 
 
 def _require_mapping_paths(mapping, target):
-    """Raise ValueError for any mapping value that is not an attribute path.
+    """Guard the mapping before any walker touches it.
 
-    Runs before any walker touches the mapping: the heavy-id scan reads the raw
-    values first, so a per-value check inside the resolve loop never sees them.
+    The heavy-id scan reads the raw values first, so a per-value check inside
+    the resolve loop never sees them.
     """
-    for key, attribute in (mapping or {}).items():
-        if attribute is not None and not isinstance(attribute, str):
-            raise ValueError(
-                f"Mapping value for key '{key}' must be an attribute path string, "
-                f"got {type(attribute).__name__}, on {target}"
-            )
+    require_mapping_paths(mapping, target)
 
 
 def _process_mapping(

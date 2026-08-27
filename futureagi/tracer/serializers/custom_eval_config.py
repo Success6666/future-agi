@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from model_hub.models.develop_dataset import KnowledgeBaseFile
 from model_hub.models.evals_metric import EvalTemplate
+from model_hub.utils.eval_mapping import non_path_mapping_keys
 from model_hub.utils.function_eval_params import normalize_eval_runtime_config
 from tracer.models.custom_eval_config import CustomEvalConfig
 from tracer.models.project import Project
@@ -46,15 +47,11 @@ class CustomEvalConfigSerializer(serializers.ModelSerializer):
         return None
 
     def validate_mapping(self, value):
-        if not value:
+        if value is None:
             return value
         if not isinstance(value, dict):
             raise serializers.ValidationError("Mapping must be an object.")
-        bad = sorted(
-            key
-            for key, path in value.items()
-            if path is not None and not isinstance(path, str)
-        )
+        bad = non_path_mapping_keys(value)
         if bad:
             raise serializers.ValidationError(
                 "Mapping values must be attribute path strings. "

@@ -3,7 +3,12 @@ import uuid
 import pytest
 from rest_framework import status
 
+from rest_framework.exceptions import ValidationError
+
 from model_hub.serializers.eval_group import ApplyEvalGroupRequestSerializer
+from model_hub.views.utils.utils import (
+    fetch_specific_mapping_for_specific_eval_template,
+)
 
 
 class TestApplyEvalGroupContracts:
@@ -109,3 +114,28 @@ def test_apply_eval_group_api_rejects_legacy_aliases(auth_client):
     )
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+class TestEvalGroupMappingValues:
+    def _template(self, required, optional=None):
+        class _T:
+            config = {"required_keys": required, "optional_keys": optional or []}
+
+        return _T()
+
+    def test_path_string_mapping_values_are_copied_through(self):
+        parsed = fetch_specific_mapping_for_specific_eval_template(
+            {"hypothesis": "input", "reference": "output.value"},
+            self._template(["hypothesis"], ["reference"]),
+        )
+
+        assert parsed == {"hypothesis": "input", "reference": "output.value"}
+
+    def test_object_mapping_value_is_refused_before_it_reaches_a_config(self):
+        with pytest.raises(ValidationError) as exc:
+            fetch_specific_mapping_for_specific_eval_template(
+                {"hypothesis": {"type": "span_attribute", "path": "input"}},
+                self._template(["hypothesis"]),
+            )
+
+        assert "hypothesis" in str(exc.value)
