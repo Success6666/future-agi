@@ -3,6 +3,7 @@ from typing import Literal, Union
 
 import structlog
 
+from model_hub.utils.eval_mapping import non_path_mapping_keys
 from tfc.ee_stub import _ee_stub
 from tfc.utils.ssrf_guard import is_valid_url, safe_fetch
 
@@ -15,8 +16,6 @@ except ImportError:
 
 logger = structlog.get_logger(__name__)
 from model_hub.views.utils.constants import PLACEHOLDER_PATTERN
-from model_hub.utils.eval_mapping import non_path_mapping_keys
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
 # Pattern to match UUID placeholders with optional .property suffix
 # Matches: {{uuid}}, {{uuid.property}}, {{uuid.nested.property}}
@@ -354,7 +353,11 @@ def fetch_required_keys_for_eval_template(eval_templates):
 def fetch_specific_mapping_for_specific_eval_template(mapping, eval_template):
     bad = non_path_mapping_keys(mapping)
     if bad:
-        raise DRFValidationError(
+        # ValueError, not DRFValidationError: the apply-eval-group view maps
+        # ValueError to a 400 and everything else to a 500 whose body is the
+        # stringified exception. A DRF ValidationError is an APIException, so it
+        # would take the 500 branch and leak ErrorDetail(...) to the caller.
+        raise ValueError(
             "Mapping values must be attribute path strings. "
             f"Non-string values for: {', '.join(bad)}."
         )
