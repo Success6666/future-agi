@@ -558,6 +558,20 @@ class EvalSkippedMissingAttribute(ValueError):
         )
 
 
+def _require_mapping_paths(mapping, target):
+    """Raise ValueError for any mapping value that is not an attribute path.
+
+    Runs before any walker touches the mapping: the heavy-id scan reads the raw
+    values first, so a per-value check inside the resolve loop never sees them.
+    """
+    for key, attribute in (mapping or {}).items():
+        if attribute is not None and not isinstance(attribute, str):
+            raise ValueError(
+                f"Mapping value for key '{key}' must be an attribute path string, "
+                f"got {type(attribute).__name__}, on {target}"
+            )
+
+
 def _process_mapping(
     mapping: dict | None, span: ObservationSpan, eval_template_id: int
 ) -> dict:
@@ -579,6 +593,7 @@ def _process_mapping(
 
     if not mapping:
         return {}
+    _require_mapping_paths(mapping, f"span {span.id}")
 
     parsed_mapping = {}
     # Use accessor for backward compatibility (span_attributes || eval_attributes)
@@ -2836,6 +2851,7 @@ def _process_trace_mapping(
     """
     if not mapping:
         return {}
+    _require_mapping_paths(mapping, f"trace {trace.id}")
 
     parsed: dict = {}
     is_user_custom_eval = False
@@ -2997,6 +3013,8 @@ def resolve_trace_mapping_lean_first(mapping: dict | None, trace, template_id) -
     """
     from tracer.services.clickhouse.v2.eval_loader import _read_source
 
+    _require_mapping_paths(mapping, f"trace {trace.id}")
+
     if _read_source() != "clickhouse":
         return _process_trace_mapping(mapping, trace, template_id)
 
@@ -3112,6 +3130,8 @@ def resolve_session_mapping_lean_first(
     """
     from tracer.services.clickhouse.v2.eval_loader import _read_source
 
+    _require_mapping_paths(mapping, f"session {trace_session.id}")
+
     if _read_source() != "clickhouse":
         return _process_session_mapping(mapping, trace_session, template_id)
 
@@ -3133,6 +3153,7 @@ def _process_session_mapping(
     """Resolve a saved mapping against a TraceSession."""
     if not mapping:
         return {}
+    _require_mapping_paths(mapping, f"session {trace_session.id}")
 
     parsed: dict = {}
     is_user_custom_eval = False

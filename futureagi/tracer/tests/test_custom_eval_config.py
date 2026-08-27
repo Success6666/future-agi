@@ -101,6 +101,81 @@ class TestCustomEvalConfigCreateAPI:
         # Should fail due to unique constraint
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    def test_create_config_saves_only_path_string_mapping_values(
+        self, auth_client, project, eval_template
+    ):
+        """Mapping values are attribute paths — an object value is not stored."""
+        rejected = auth_client.post(
+            "/tracer/custom-eval-config/",
+            {
+                "project": str(project.id),
+                "eval_template": str(eval_template.id),
+                "name": "Object Mapping Config",
+                "mapping": {"input": {"path": "input"}, "output": "output"},
+            },
+            format="json",
+        )
+        assert rejected.status_code == status.HTTP_400_BAD_REQUEST
+        assert not CustomEvalConfig.objects.filter(
+            name="Object Mapping Config"
+        ).exists()
+
+        accepted = auth_client.post(
+            "/tracer/custom-eval-config/",
+            {
+                "project": str(project.id),
+                "eval_template": str(eval_template.id),
+                "name": "Path Mapping Config",
+                "mapping": {"input": "input.value", "output": "output"},
+            },
+            format="json",
+        )
+        assert accepted.status_code == status.HTTP_200_OK
+        saved = CustomEvalConfig.objects.get(name="Path Mapping Config")
+        assert saved.mapping == {"input": "input.value", "output": "output"}
+
+
+@pytest.mark.integration
+@pytest.mark.api
+class TestCustomEvalConfigPartialUpdateAPI:
+    """Tests for PATCH /tracer/custom-eval-config/<id>/ endpoint."""
+
+    def test_partial_update_unauthenticated(self, api_client, custom_eval_config):
+        """Unauthenticated requests should be rejected."""
+        response = api_client.patch(
+            f"/tracer/custom-eval-config/{custom_eval_config.id}/",
+            {"mapping": {"input": "input.value"}},
+            format="json",
+        )
+        assert response.status_code in AUTH_REQUIRED_STATUS_CODES
+
+    def test_partial_update_saves_only_path_string_mapping_values(
+        self, auth_client, custom_eval_config
+    ):
+        """Mapping values are attribute paths — an object value is not stored."""
+        existing_mapping = dict(custom_eval_config.mapping)
+
+        rejected = auth_client.patch(
+            f"/tracer/custom-eval-config/{custom_eval_config.id}/",
+            {"mapping": {"input": {"path": "input"}, "output": "output"}},
+            format="json",
+        )
+        assert rejected.status_code == status.HTTP_400_BAD_REQUEST
+        custom_eval_config.refresh_from_db()
+        assert custom_eval_config.mapping == existing_mapping
+
+        accepted = auth_client.patch(
+            f"/tracer/custom-eval-config/{custom_eval_config.id}/",
+            {"mapping": {"input": "input.value", "output": "output"}},
+            format="json",
+        )
+        assert accepted.status_code == status.HTTP_200_OK
+        custom_eval_config.refresh_from_db()
+        assert custom_eval_config.mapping == {
+            "input": "input.value",
+            "output": "output",
+        }
+
 
 @pytest.mark.integration
 @pytest.mark.api

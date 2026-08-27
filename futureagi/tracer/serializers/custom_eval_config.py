@@ -45,6 +45,23 @@ class CustomEvalConfigSerializer(serializers.ModelSerializer):
             return obj.eval_group.name
         return None
 
+    def validate_mapping(self, value):
+        if not value:
+            return value
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Mapping must be an object.")
+        bad = sorted(
+            key
+            for key, path in value.items()
+            if path is not None and not isinstance(path, str)
+        )
+        if bad:
+            raise serializers.ValidationError(
+                "Mapping values must be attribute path strings. "
+                f"Non-string values for: {', '.join(bad)}."
+            )
+        return value
+
     def validate(self, attrs):
         eval_template = attrs.get("eval_template") or getattr(
             self.instance, "eval_template", None

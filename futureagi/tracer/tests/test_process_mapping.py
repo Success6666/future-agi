@@ -4,7 +4,14 @@ import uuid
 
 import pytest
 
-from tracer.utils.eval import EvalSkippedMissingAttribute, _process_mapping
+from tracer.utils.eval import (
+    EvalSkippedMissingAttribute,
+    _process_mapping,
+    _process_session_mapping,
+    _process_trace_mapping,
+    resolve_session_mapping_lean_first,
+    resolve_trace_mapping_lean_first,
+)
 
 
 @pytest.fixture
@@ -336,3 +343,76 @@ def test_voice_fallback_not_reached_when_literal_resolves(
         {"v": "call.duration"}, span, eval_template_id=missing_eval_template_id
     )
     assert out == {"v": "42"}
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Non-string mapping values
+#
+# A saved mapping value is an attribute path string. A resolver handed any
+# other type must fail as a ValueError — the type the eval callers catch and
+# persist as a failed EvalLogger row — rather than a TypeError/AttributeError
+# from inside a path walker.
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def test_object_mapping_value_fails_span_mapping_as_value_error(
+    _span_with_attrs, missing_eval_template_id
+):
+    span = _span_with_attrs({"input": "hello"})
+    with pytest.raises(ValueError, match="must be an attribute path string"):
+        _process_mapping(
+            {"prompt": {"path": "input"}},
+            span,
+            eval_template_id=missing_eval_template_id,
+        )
+    assert _process_mapping(
+        {"prompt": "input"}, span, eval_template_id=missing_eval_template_id
+    ) == {"prompt": "hello"}
+
+
+def test_object_mapping_value_fails_trace_mapping_as_value_error(
+    trace, eval_template
+):
+    with pytest.raises(ValueError, match="must be an attribute path string"):
+        _process_trace_mapping({"prompt": {"path": "name"}}, trace, eval_template.id)
+    assert _process_trace_mapping({"prompt": "name"}, trace, eval_template.id) == {
+        "prompt": "Test Trace"
+    }
+
+
+def test_object_mapping_value_fails_session_mapping_as_value_error(
+    trace_session, eval_template
+):
+    with pytest.raises(ValueError, match="must be an attribute path string"):
+        _process_session_mapping(
+            {"prompt": {"path": "name"}}, trace_session, eval_template.id
+        )
+    assert _process_session_mapping(
+        {"prompt": "name"}, trace_session, eval_template.id
+    ) == {"prompt": "Test Session"}
+
+
+def test_object_mapping_value_fails_lean_first_trace_path(trace, eval_template, mocker):
+    mocker.patch(
+        "tracer.services.clickhouse.v2.eval_loader._read_source",
+        return_value="clickhouse",
+    )
+    with pytest.raises(ValueError, match="must be an attribute path string"):
+        resolve_trace_mapping_lean_first(
+            {"prompt": {"path": "spans.0.input"}}, trace, eval_template.id
+        )
+
+
+def test_object_mapping_value_fails_lean_first_session_path(
+    trace_session, eval_template, mocker
+):
+    mocker.patch(
+        "tracer.services.clickhouse.v2.eval_loader._read_source",
+        return_value="clickhouse",
+    )
+    with pytest.raises(ValueError, match="must be an attribute path string"):
+        resolve_session_mapping_lean_first(
+            {"prompt": {"path": "traces.0.spans.0.input"}},
+            trace_session,
+            eval_template.id,
+        )
