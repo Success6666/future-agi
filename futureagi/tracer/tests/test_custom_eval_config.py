@@ -562,6 +562,19 @@ class TestScanEvalMappingPathsCommand:
         assert "output" not in output.split("invalid_keys=")[1].split("]")[0]
         assert "affected_eval_configs=1" in output
 
+    def test_reports_a_list_valued_row_without_aborting(self, custom_eval_config):
+        # non_path_mapping_keys used to raise AttributeError on a non-dict
+        # mapping, which killed the sweep on the first such row and left every
+        # row after it unreported.
+        custom_eval_config.mapping = ["input", "output"]
+        custom_eval_config.save(update_fields=["mapping"])
+
+        output = self._scan()
+
+        assert str(custom_eval_config.id) in output
+        assert "<mapping>=list" in output
+        assert "affected_eval_configs=1" in output
+
     def test_reports_nothing_when_every_value_is_a_path(self, custom_eval_config):
         output = self._scan()
 
@@ -605,14 +618,58 @@ class TestEvalTagIngestMappingValues:
     def test_object_mapping_value_is_refused_before_a_config_is_created(
         self, project, eval_template
     ):
-        from tracer.utils.otel import _process_eval_tags
+        # Driven through get_or_create_project_version, not _process_eval_tags:
+        # creation happens in _create_custom_eval_configs, so only the caller
+        # that reaches it can show that nothing was created.
+        from tracer.utils.otel import get_or_create_project_version
 
-        with pytest.raises(ValueError, match="must be an attribute path string"):
-            _process_eval_tags(
-                self._tag({"input": {"path": "input"}, "output": "output"}, eval_template),
-                project,
+        with pytest.raises(Exception, match="must be an attribute path string"):
+            get_or_create_project_version(
+                project_id=project.id,
+                project_version_name="v1",
+                project_version_id=None,
+                eval_tags=self._tag(
+                    {"input": {"path": "input"}, "output": "output"}, eval_template
+                ),
+                metadata=None,
+                project_type="experiment",
             )
         assert not CustomEvalConfig.objects.filter(name="release-tag-eval").exists()
+
+    def test_async_ingest_keeps_the_span_batch_when_a_tag_is_malformed(
+        self, project, eval_template
+    ):
+        """The OTLP export already answered 200 before this runs.
+
+        bulk_create_observation_span_task is a max_retries=0 activity wrapping
+        the whole batch in one transaction, so raising here would drop every
+        span in it with nothing surfaced to the client. The bad tag is dropped
+        instead; the spans land.
+        """
+        from tracer.utils.otel import _bulk_get_or_create_project_versions
+
+        tags = self._tag(
+            {"input": {"path": "input"}, "output": "output"}, eval_template
+        )
+        versions = _bulk_get_or_create_project_versions(
+            [(project.name, "experiment", "v1", None, tags)],
+            {(project.name, project.organization_id, "experiment"): project},
+            project.organization_id,
+        )
+
+        assert any(
+            v is not None for v in versions.values()
+        ), "the whole span batch would have been dropped"
+        assert not CustomEvalConfig.objects.filter(name="release-tag-eval").exists()
+
+    def test_list_mapping_is_refused_as_a_value_error(self, project, eval_template):
+        # A list was storable before the write gates existed: the OTEL path
+        # stored wire values verbatim after json.loads. It must not reach
+        # ``.items()`` as an AttributeError.
+        from tracer.utils.otel import _process_eval_tags
+
+        with pytest.raises(ValueError, match="must be an object"):
+            _process_eval_tags(self._tag(["input", "output"], eval_template), project)
 
     def test_path_string_mapping_values_pass_through(self, project, eval_template):
         from tracer.utils.otel import _process_eval_tags
