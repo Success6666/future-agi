@@ -2,7 +2,9 @@ import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { useForm } from "react-hook-form";
+import { ErrorBoundary } from "react-error-boundary";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { INVALID_MAPPING_LABEL } from "src/sections/evals/utils/evalMappingPath";
 import TaskLivePreview from "../TaskLivePreview";
 
 const axiosGetMock = vi.hoisted(() => vi.fn());
@@ -63,6 +65,11 @@ const renderPreview = (evalsDetails) => {
   );
 };
 
+// The saved value that crashed production was an object. Its inner shape was
+// never recoverable from the report, so these tests assert on the value being a
+// non-string — which is the whole gate — and never on a particular inner shape.
+const OBJECT_MAPPING_VALUE = { value: "output.value" };
+
 describe("TaskLivePreview — variable mapping", () => {
   beforeEach(() => {
     axiosGetMock.mockReset();
@@ -82,14 +89,14 @@ describe("TaskLivePreview — variable mapping", () => {
       {
         id: "eval-1",
         name: "Groundedness",
-        mapping: { context: { value: "output.value" }, answer: "output.value" },
+        mapping: { context: OBJECT_MAPPING_VALUE, answer: "output.value" },
       },
     ]);
 
     expect(await screen.findByText("Variable Mapping")).toBeInTheDocument();
     expect(screen.getByText("context")).toBeInTheDocument();
     expect(screen.getByText("answer")).toBeInTheDocument();
-    expect(screen.getByText("invalid mapping")).toBeInTheDocument();
+    expect(screen.getByText(INVALID_MAPPING_LABEL)).toBeInTheDocument();
     expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
   });
 
@@ -98,13 +105,71 @@ describe("TaskLivePreview — variable mapping", () => {
       {
         id: "eval-1",
         name: "Groundedness",
-        mapping: { context: { value: "output.value" }, answer: "output.value" },
+        mapping: { context: OBJECT_MAPPING_VALUE, answer: "output.value" },
       },
     ]);
 
     await screen.findByText("Variable Mapping");
     expect(screen.getByText("output.value")).toBeInTheDocument();
-    expect(screen.getByText("invalid mapping")).toBeInTheDocument();
+    expect(screen.getByText(INVALID_MAPPING_LABEL)).toBeInTheDocument();
     expect(screen.queryByText("(not in row)")).not.toBeInTheDocument();
+  });
+});
+
+describe("TaskLivePreview — app error boundary", () => {
+  beforeEach(() => {
+    axiosGetMock.mockReset();
+    axiosGetMock.mockResolvedValue({
+      data: {
+        result: {
+          table: [{ span_id: "span-1", output: { value: "hi" } }],
+          metadata: { total_rows: 1 },
+          config: [],
+        },
+      },
+    });
+  });
+
+  it("does not trip the boundary that wraps the whole app", async () => {
+    // app.jsx wraps <Router /> in this same react-error-boundary with no reset
+    // on navigation, so anything thrown while rendering a mapping takes the
+    // whole application down until a reload — that was the reported symptom.
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    const Harness = () => {
+      const { control } = useForm({
+        defaultValues: {
+          filters: [],
+          startDate: null,
+          endDate: null,
+          rowType: "spans",
+          evalsDetails: [
+            {
+              id: "eval-1",
+              name: "Groundedness",
+              mapping: { context: OBJECT_MAPPING_VALUE },
+            },
+          ],
+        },
+      });
+      return <TaskLivePreview control={control} projectId="project-1" />;
+    };
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ErrorBoundary
+          FallbackComponent={() => <div>application error boundary</div>}
+        >
+          <Harness />
+        </ErrorBoundary>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Variable Mapping")).toBeInTheDocument();
+    expect(
+      screen.queryByText("application error boundary"),
+    ).not.toBeInTheDocument();
   });
 });

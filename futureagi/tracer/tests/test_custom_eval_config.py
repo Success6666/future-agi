@@ -6,8 +6,10 @@ Tests for /tracer/custom-eval-config/ endpoints.
 
 import json
 import uuid
+from io import StringIO
 
 import pytest
+from django.core.management import call_command
 from rest_framework import status
 
 from tracer.models.custom_eval_config import CustomEvalConfig
@@ -119,6 +121,12 @@ class TestCustomEvalConfigCreateAPI:
         assert not CustomEvalConfig.objects.filter(
             name="Object Mapping Config"
         ).exists()
+        # The response names the offending key in words the caller can act on,
+        # and carries no DRF internals.
+        body = json.dumps(rejected.json())
+        assert "attribute path strings" in body
+        assert "input" in body
+        assert "ErrorDetail" not in body
 
         accepted = auth_client.post(
             "/tracer/custom-eval-config/",
@@ -163,6 +171,10 @@ class TestCustomEvalConfigPartialUpdateAPI:
         assert rejected.status_code == status.HTTP_400_BAD_REQUEST
         custom_eval_config.refresh_from_db()
         assert custom_eval_config.mapping == existing_mapping
+        body = json.dumps(rejected.json())
+        assert "attribute path strings" in body
+        assert "input" in body
+        assert "ErrorDetail" not in body
 
         accepted = auth_client.patch(
             f"/tracer/custom-eval-config/{custom_eval_config.id}/",
@@ -526,3 +538,50 @@ class TestEvalConfigBYOModel:
         config = ExternalEvalConfig(model=model_value)
         exclude = [f.name for f in ExternalEvalConfig._meta.fields if f.name != "model"]
         config.clean_fields(exclude=exclude)
+
+
+@pytest.mark.integration
+class TestScanEvalMappingPathsCommand:
+    """Tests for `manage.py scan_eval_mapping_paths` — the existing-row sweep."""
+
+    def _scan(self, **kwargs):
+        out = StringIO()
+        call_command("scan_eval_mapping_paths", stdout=out, **kwargs)
+        return out.getvalue()
+
+    def test_reports_a_row_saved_before_the_write_gate(self, custom_eval_config):
+        # Written straight through the ORM: exactly how the rows that predate
+        # the API gate exist today.
+        custom_eval_config.mapping = {"input": {"path": "input"}, "output": "output"}
+        custom_eval_config.save(update_fields=["mapping"])
+
+        output = self._scan()
+
+        assert str(custom_eval_config.id) in output
+        assert "input=dict" in output
+        assert "output" not in output.split("invalid_keys=")[1].split("]")[0]
+        assert "affected_eval_configs=1" in output
+
+    def test_reports_nothing_when_every_value_is_a_path(self, custom_eval_config):
+        output = self._scan()
+
+        assert str(custom_eval_config.id) not in output
+        assert "affected_eval_configs=0" in output
+
+    def test_leaves_the_row_untouched(self, custom_eval_config):
+        broken = {"input": {"path": "input"}, "output": "output"}
+        custom_eval_config.mapping = broken
+        custom_eval_config.save(update_fields=["mapping"])
+
+        self._scan()
+
+        custom_eval_config.refresh_from_db()
+        assert custom_eval_config.mapping == broken
+
+    def test_project_filter_scopes_the_scan(self, custom_eval_config):
+        custom_eval_config.mapping = {"input": {"path": "input"}}
+        custom_eval_config.save(update_fields=["mapping"])
+
+        output = self._scan(project_id=str(uuid.uuid4()))
+
+        assert "affected_eval_configs=0" in output

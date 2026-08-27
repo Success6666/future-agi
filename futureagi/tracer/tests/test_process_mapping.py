@@ -4,11 +4,13 @@ import uuid
 
 import pytest
 
+from tracer.models.observation_span import EvalLogger
 from tracer.utils.eval import (
     EvalSkippedMissingAttribute,
     _process_mapping,
     _process_session_mapping,
     _process_trace_mapping,
+    evaluate_trace_observe,
     resolve_session_mapping_lean_first,
     resolve_trace_mapping_lean_first,
 )
@@ -416,3 +418,50 @@ def test_object_mapping_value_fails_lean_first_session_path(
             trace_session,
             eval_template.id,
         )
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# The recorded outcome
+#
+# ``evaluate_trace_observe`` records a ValueError on EvalTask.failed_spans and
+# writes an error EvalLogger row, but its bare ``except Exception`` only logs.
+# A mapping value that used to raise TypeError out of a path walker therefore
+# produced no eval result and no trace of why. Raising ValueError instead is
+# what makes the failure visible, so that is what this asserts.
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def test_object_mapping_value_is_recorded_not_swallowed(
+    trace, observation_span, custom_eval_config, eval_task, mocker
+):
+    mocker.patch(
+        "tracer.services.clickhouse.v2.eval_loader._read_source",
+        return_value="postgres",
+    )
+    custom_eval_config.mapping = {"input": {"path": "input"}, "output": "output"}
+    custom_eval_config.save(update_fields=["mapping"])
+
+    # ``._original_func`` for the same reason ``inline_temporal`` uses it: the
+    # temporal_activity wrapper's close_old_connections() drops pytest-django's
+    # test transaction. The body it wraps is the one Temporal runs.
+    result = evaluate_trace_observe._original_func(
+        trace_id=str(trace.id),
+        custom_eval_config_id=str(custom_eval_config.id),
+        eval_task_id=str(eval_task.id),
+    )
+
+    assert result is False
+
+    eval_task.refresh_from_db()
+    assert eval_task.failed_spans, "the failure was swallowed, not recorded"
+    recorded = eval_task.failed_spans[-1]
+    assert recorded["trace_id"] == str(trace.id)
+    assert "must be an attribute path string" in recorded["error"]
+
+    errored = EvalLogger.objects.filter(
+        trace_id=trace.id,
+        custom_eval_config_id=custom_eval_config.id,
+        error=True,
+    ).first()
+    assert errored is not None, "no error row was written for the failed eval"
+    assert "must be an attribute path string" in errored.error_message

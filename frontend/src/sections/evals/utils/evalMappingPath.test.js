@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   INVALID_MAPPING_LABEL,
+  isClearedMappingValue,
   isMappingPath,
   mappingChipLabel,
   mappingPathLabel,
@@ -61,5 +62,24 @@ describe("mappingChipLabel", () => {
 
   it("renders a bare variable for an unmapped value", () => {
     expect(mappingChipLabel("input", null)).toBe("input → ");
+  });
+});
+
+describe("isClearedMappingValue", () => {
+  it("treats unset and blank values as cleared", () => {
+    expect(isClearedMappingValue(null)).toBe(true);
+    expect(isClearedMappingValue(undefined)).toBe(true);
+    expect(isClearedMappingValue("")).toBe(true);
+    expect(isClearedMappingValue("   ")).toBe(true);
+  });
+
+  it("does not treat a non-string as cleared, so it reaches the API gate", () => {
+    expect(isClearedMappingValue({ value: "output.value" })).toBe(false);
+    expect(isClearedMappingValue(["output", "value"])).toBe(false);
+    expect(isClearedMappingValue(0)).toBe(false);
+  });
+
+  it("keeps a real attribute path", () => {
+    expect(isClearedMappingValue("output.value")).toBe(false);
   });
 });

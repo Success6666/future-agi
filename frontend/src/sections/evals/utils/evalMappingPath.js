@@ -6,6 +6,14 @@ export function isMappingPath(value) {
   return typeof value === "string" && value !== "";
 }
 
+// A cleared field reaches the payload as "" or null (whitespace-only counts as
+// cleared). A non-string is deliberately NOT cleared: it is forwarded so the
+// API rejects it with a message, rather than being dropped here and taking the
+// variable down with it.
+export function isClearedMappingValue(value) {
+  return value == null || (typeof value === "string" && value.trim() === "");
+}
+
 export function mappingPathLabel(value) {
   if (isMappingPath(value)) return value;
   return value == null || value === "" ? "" : INVALID_MAPPING_LABEL;
