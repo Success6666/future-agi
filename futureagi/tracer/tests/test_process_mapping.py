@@ -372,9 +372,7 @@ def test_object_mapping_value_fails_span_mapping_as_value_error(
     ) == {"prompt": "hello"}
 
 
-def test_object_mapping_value_fails_trace_mapping_as_value_error(
-    trace, eval_template
-):
+def test_object_mapping_value_fails_trace_mapping_as_value_error(trace, eval_template):
     with pytest.raises(ValueError, match="must be an attribute path string"):
         _process_trace_mapping({"prompt": {"path": "name"}}, trace, eval_template.id)
     assert _process_trace_mapping({"prompt": "name"}, trace, eval_template.id) == {
@@ -392,6 +390,25 @@ def test_object_mapping_value_fails_session_mapping_as_value_error(
     assert _process_session_mapping(
         {"prompt": "name"}, trace_session, eval_template.id
     ) == {"prompt": "Test Session"}
+
+
+def test_list_mapping_raises_value_error_not_attribute_error(trace, eval_template):
+    # ``(mapping or {}).items()`` only absorbs an *empty* list. A populated one
+    # used to raise AttributeError, which the callers' broad ``except Exception``
+    # swallows instead of recording — the exact failure mode this set out to end.
+    with pytest.raises(ValueError, match="must be an object"):
+        _process_trace_mapping(["prompt"], trace, eval_template.id)
+
+
+def test_cleared_value_on_a_required_key_is_a_missing_attribute(
+    observation_span, eval_template
+):
+    # ``None`` is admissible (it is how a cleared field is stored) and is popped
+    # for optional keys. On a *required* key the span resolver used to reach
+    # ``None.split(".")``; it now converges on the same missing-attribute
+    # failure the trace and session resolvers already raised.
+    with pytest.raises(EvalSkippedMissingAttribute):
+        _process_mapping({"prompt": None}, observation_span, eval_template.id)
 
 
 # The shape the reporting customer actually saved, quoted from their own report:
@@ -453,12 +470,8 @@ def test_object_mapping_value_fails_lean_first_session_path(
 
 
 def test_object_mapping_value_is_recorded_not_swallowed(
-    trace, observation_span, custom_eval_config, eval_task, mocker
+    trace, observation_span, custom_eval_config, eval_task
 ):
-    mocker.patch(
-        "tracer.services.clickhouse.v2.eval_loader._read_source",
-        return_value="postgres",
-    )
     custom_eval_config.mapping = {"input": {"path": "input"}, "output": "output"}
     custom_eval_config.save(update_fields=["mapping"])
 

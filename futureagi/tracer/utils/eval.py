@@ -17,9 +17,9 @@ from accounts.models.workspace import Workspace
 # ClickHouse client warms up at startup. Keep it lazy.
 from agentic_eval.core_evals.fi_evals import *  # noqa: F403
 from common.utils.data_injection import normalize as _di_normalize
-from model_hub.utils.eval_mapping import require_mapping_paths
 from model_hub.models.choices import StatusType
 from model_hub.models.evals_metric import EvalTemplate
+from model_hub.utils.eval_mapping import require_mapping_paths
 from sdk.utils.helpers import _get_api_call_type
 from tfc.constants.api_calls import APICallStatusChoices
 from tfc.temporal import temporal_activity
@@ -621,7 +621,9 @@ def _process_mapping(
         # shorthands (``recording_url``, ``transcript``, …) resolve to
         # one of several provider-specific attribute names via the
         # ``_ATTRIBUTE_ALIASES`` table above — first hit wins.
-        candidates = [attribute, f"{attribute}.value"]
+        # A cleared value on a required key: _resolve_attr would reach
+        # ``None.split(".")``. Falls through to the miss branch, as trace does.
+        candidates = [attribute, f"{attribute}.value"] if attribute else []
         for alias in _ATTRIBUTE_ALIASES.get(attribute, []):
             candidates.append(alias)
             candidates.append(f"{alias}.value")
@@ -644,6 +646,7 @@ def _process_mapping(
         # so non-voice spans are unaffected. See _walk_raw_log.
         if (
             resolved_value is _MISSING
+            and attribute
             and span.observation_type == ObservationType.CONVERSATION
         ):
             raw_log = span_attrs.get("raw_log")

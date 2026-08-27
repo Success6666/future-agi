@@ -19,7 +19,7 @@ Usage:
 
 from django.core.management.base import BaseCommand
 
-from model_hub.utils.eval_mapping import non_path_mapping_keys
+from model_hub.utils.eval_mapping import WHOLE_MAPPING_KEY, non_path_mapping_keys
 from tracer.models.custom_eval_config import CustomEvalConfig
 
 
@@ -52,13 +52,23 @@ class Command(BaseCommand):
 
         affected = 0
         for config in queryset.iterator():
-            bad_keys = non_path_mapping_keys(config.mapping)
+            # This sweeps legacy rows of unknown shape, so one surprising row
+            # must not cost the report on every row after it.
+            try:
+                bad_keys = non_path_mapping_keys(config.mapping)
+            except Exception as exc:  # noqa: BLE001 - a support tool, keep going
+                affected += 1
+                self.stderr.write(f"eval_config={config.id} unreadable_mapping={exc!r}")
+                continue
             if not bad_keys:
                 continue
             affected += 1
-            details = ", ".join(
-                f"{key}={type(config.mapping[key]).__name__}" for key in bad_keys
-            )
+            if bad_keys == [WHOLE_MAPPING_KEY]:
+                details = f"{WHOLE_MAPPING_KEY}={type(config.mapping).__name__}"
+            else:
+                details = ", ".join(
+                    f"{key}={type(config.mapping[key]).__name__}" for key in bad_keys
+                )
             self.stdout.write(
                 f"organization={config.project.organization_id} "
                 f"project={config.project_id} "
