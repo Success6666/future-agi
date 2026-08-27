@@ -19,6 +19,10 @@ export function mappingPathLabel(value) {
   return value == null || value === "" ? "" : INVALID_MAPPING_LABEL;
 }
 
-export function mappingChipLabel(key, value) {
-  return `${key} → ${mappingPathLabel(value)}`;
+// A cleared value has no label, so the chip is the key alone rather than a
+// dangling separator. `separator` exists because the develop-detail chips use
+// ": " while the eval chips use " -> " — same label rule, one owner.
+export function mappingChipLabel(key, value, separator = " → ") {
+  const label = mappingPathLabel(value);
+  return label ? `${key}${separator}${label}` : key;
 }

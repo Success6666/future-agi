@@ -105,14 +105,23 @@ describe("TaskLivePreview — variable mapping", () => {
       {
         id: "eval-1",
         name: "Groundedness",
-        mapping: { context: OBJECT_MAPPING_VALUE, answer: "output.value" },
+        mapping: {
+          context: OBJECT_MAPPING_VALUE,
+          answer: "output.value",
+          absent: "nope.not.here",
+        },
       },
     ]);
 
-    await screen.findByText("Variable Mapping");
+    // Every hit is forced to "unknown" until spanDetail resolves, which also
+    // suppresses "(not in row)". Awaiting it therefore pins the assertions
+    // below to the post-resolution render — asserting its absence would have
+    // passed mid-fetch and proved nothing about resolution.
+    expect(await screen.findByText("(not in row)")).toBeInTheDocument();
     expect(screen.getByText("output.value")).toBeInTheDocument();
     expect(screen.getByText(INVALID_MAPPING_LABEL)).toBeInTheDocument();
-    expect(screen.queryByText("(not in row)")).not.toBeInTheDocument();
+    // Only the absent path warns, so output.value genuinely resolved.
+    expect(screen.getAllByText("(not in row)")).toHaveLength(1);
   });
 });
 

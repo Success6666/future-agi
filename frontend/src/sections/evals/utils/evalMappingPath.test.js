@@ -60,8 +60,21 @@ describe("mappingChipLabel", () => {
     expect(label).not.toContain("[object Object]");
   });
 
-  it("renders a bare variable for an unmapped value", () => {
-    expect(mappingChipLabel("input", null)).toBe("input → ");
+  it("renders the variable alone rather than a dangling separator", () => {
+    // mappedKeys is unfiltered Object.keys(mapping), so a cleared value in
+    // in-memory state still reaches a chip.
+    expect(mappingChipLabel("input", null)).toBe("input");
+    expect(mappingChipLabel("input", "")).toBe("input");
+  });
+
+  it("takes the separator from the call site", () => {
+    // develop-detail chips read "key: value"; the eval chips use the arrow.
+    expect(mappingChipLabel("input", "output.value", ": ")).toBe(
+      "input: output.value",
+    );
+    expect(mappingChipLabel("input", { value: "x" }, ": ")).toBe(
+      `input: ${INVALID_MAPPING_LABEL}`,
+    );
   });
 });
 
