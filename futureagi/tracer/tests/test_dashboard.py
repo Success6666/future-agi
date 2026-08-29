@@ -1592,9 +1592,12 @@ class TestDashboardQueryBuilder:
         sql, params, metric_info = DashboardQueryBuilder(config).build_all_queries()[0]
 
         assert "filtered_scores AS" in sql
-        assert "min(score) OVER () AS min_score" in sql
-        assert "count() AS value" in sql
-        assert "GROUP BY min_score, max_score, bucket_index" in sql
+        assert "score_bounds AS" in sql
+        assert "bucket_counts AS" in sql
+        assert "ARRAY JOIN range(10) AS bucket_index" in sql
+        assert "ifNull(bucket_counts.value, 0) AS value" in sql
+        assert "LEFT JOIN bucket_counts" in sql
+        assert "min(score) OVER () AS min_score" not in sql
         assert "histogram(" not in sql
         assert "time_bucket" not in sql
         assert "e.created_at >= %(start_date)s" in sql
