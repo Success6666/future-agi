@@ -20387,6 +20387,14 @@ export const DashboardQueryApiGranularity = {
   month: "month",
 } as const;
 
+export type DashboardQueryApiQueryMode =
+  (typeof DashboardQueryApiQueryMode)[keyof typeof DashboardQueryApiQueryMode];
+
+export const DashboardQueryApiQueryMode = {
+  time_series: "time_series",
+  distribution: "distribution",
+} as const;
+
 export type DashboardQueryApiFiltersItemFilterConfigAttributeValueTypesItem =
   (typeof DashboardQueryApiFiltersItemFilterConfigAttributeValueTypesItem)[keyof typeof DashboardQueryApiFiltersItemFilterConfigAttributeValueTypesItem];
 
@@ -20650,6 +20658,7 @@ export interface DashboardQueryApi {
   project_ids?: string[];
   time_range: DashboardTimeRangeApi;
   granularity?: DashboardQueryApiGranularity;
+  query_mode?: DashboardQueryApiQueryMode;
   metrics: DashboardMetricApi[];
   filters?: DashboardQueryApiFiltersItem[];
   breakdowns?: DashboardBreakdownApi[];
@@ -20683,7 +20692,9 @@ export const DashboardQueryMetricResultApiAggregation = {
 
 export interface DashboardQuerySeriesPointApi {
   /** @minLength 1 */
-  timestamp: string;
+  timestamp?: string;
+  bucket_start?: number;
+  bucket_end?: number;
   value: number;
 }
 

@@ -369,9 +369,9 @@ def test_dashboard_worker_has_one_deadline_for_every_exact_source():
     assert settings.GRAPH_BACKGROUND_WALL_MS > _DASHBOARD_EXACT_QUERY_TIMEOUT_MS
     assert source.count("ReadDeadline.start(") == 1
     assert source.count("timeout_ms=read_deadline.remaining_ms(") == 4
-    assert source.count(
-        "timeout_ms=read_deadline.remaining_ms(statement_timeout_ms)"
-    ) == 4
+    assert (
+        source.count("timeout_ms=read_deadline.remaining_ms(statement_timeout_ms)") == 4
+    )
     assert source.count("read_deadline.remaining_ms(floor_ms=1)") == 2
     assert "query_timeout =" not in source
 
@@ -5684,6 +5684,40 @@ class TestDashboardQueryBuilder:
         assert "usage_apicalllog" in sql
         assert "eval_score" in sql
 
+    def test_eval_metric_distribution_query_returns_fixed_buckets(self):
+        config = {
+            "project_ids": ["proj1"],
+            "organization_id": str(uuid.uuid4()),
+            "workspace_id": str(uuid.uuid4()),
+            "query_mode": "distribution",
+            "time_range": {
+                "custom_start": "2025-01-01T00:00:00Z",
+                "custom_end": "2025-01-02T00:00:00Z",
+            },
+            "metrics": [
+                {
+                    "id": "e1",
+                    "name": "accuracy",
+                    "type": "eval_metric",
+                    "config_id": str(uuid.uuid4()),
+                    "output_type": "SCORE",
+                    "aggregation": "count",
+                }
+            ],
+        }
+
+        sql, params, metric_info = DashboardQueryBuilder(config).build_all_queries()[0]
+
+        assert "filtered_scores AS" in sql
+        assert "score_bounds AS" in sql
+        assert "bucket_counts AS" in sql
+        assert "ARRAY JOIN range(10) AS bucket_index" in sql
+        assert "ifNull(bucket_counts.value, 0) AS value" in sql
+        assert "time_bucket" not in sql
+        assert params["start_date"] == datetime(2025, 1, 1, tzinfo=UTC)
+        assert params["end_date"] == datetime(2025, 1, 2, tzinfo=UTC)
+        assert metric_info["aggregation"] == "count"
+
     def test_eval_metric_pass_fail(self):
         config = {
             "project_ids": ["proj1"],
@@ -7212,6 +7246,29 @@ class TestDashboardQueryBuilderFormatResults:
         non_null = [d for d in series[0]["data"] if d["value"] is not None]
         assert len(non_null) == 2
         assert metrics[0]["unit"] == "ms"
+
+    def test_format_distribution_results_keeps_bucket_bounds(self):
+        config = {
+            "query_mode": "distribution",
+            "time_range": {
+                "custom_start": "2025-01-01T00:00:00Z",
+                "custom_end": "2025-01-02T00:00:00Z",
+            },
+            "metrics": [{"id": "accuracy", "type": "eval_metric"}],
+        }
+        rows = [
+            {"bucket_start": 0.5, "bucket_end": 1.0, "value": 2},
+            {"bucket_start": 0.0, "bucket_end": 0.5, "value": 3},
+        ]
+
+        result = DashboardQueryBuilder(config).format_distribution_results(
+            [({"id": "accuracy", "name": "Accuracy"}, rows)]
+        )
+
+        assert result["metrics"][0]["series"][0]["data"] == [
+            {"bucket_start": 0.0, "bucket_end": 0.5, "value": 3},
+            {"bucket_start": 0.5, "bucket_end": 1.0, "value": 2},
+        ]
 
     def test_format_with_breakdown(self):
         config = {
@@ -9018,6 +9075,31 @@ class TestDashboardQuerySerializer:
         assert opted_in.is_valid(), opted_in.errors
         assert opted_in.validated_data["allow_sampled"] is True
 
+    def test_distribution_query_requires_one_numeric_eval_metric(self):
+        metric = {
+            "name": "accuracy",
+            "type": "eval_metric",
+            "source": "traces",
+            "output_type": "SCORE",
+            "aggregation": "count",
+        }
+        valid = {
+            "query_mode": "distribution",
+            "time_range": {"preset": "7D"},
+            "metrics": [metric],
+        }
+        serializer = DashboardQuerySerializer(data=valid)
+        assert serializer.is_valid(), serializer.errors
+
+        for invalid in (
+            {**valid, "metrics": [metric, {**metric, "name": "relevance"}]},
+            {**valid, "metrics": [{**metric, "aggregation": "avg"}]},
+            {**valid, "metrics": [{**metric, "output_type": "CHOICE"}]},
+            {**valid, "breakdowns": [{"name": "model", "type": "system_metric"}]},
+        ):
+            invalid_serializer = DashboardQuerySerializer(data=invalid)
+            assert not invalid_serializer.is_valid(), invalid_serializer.errors
+
     def test_numeric_custom_metric_infers_number_when_frontend_omits_type(self):
         data = {
             "workflow": "observability",
@@ -9076,9 +9158,7 @@ class TestDashboardQuerySerializer:
         sql, params = DashboardQueryBuilderV2(
             serializer.validated_data
         ).build_metric_query(metric)
-        assert (
-            f"{aggregation}(attrs_number[%(custom_metric_attr_key)s])" in sql
-        )
+        assert f"{aggregation}(attrs_number[%(custom_metric_attr_key)s])" in sql
         assert "latest_custom_metric_spans AS" not in sql
         assert "FINAL" not in without_query_settings(sql)
         assert "mapContains(attrs_number, %(custom_metric_attr_key)s)" in sql
